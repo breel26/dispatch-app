@@ -44,6 +44,17 @@ if you try). `prisma.config.ts` requires the `dotenv` package as a
 dependency. This tripped us up once already — don't reintroduce a `url =
 env("DATABASE_URL")` line in schema.prisma.
 
+Also on Prisma 7: `prisma.config.ts`'s `datasource.url` only covers the
+CLI (`prisma generate`, `migrate dev`, etc.) — it does NOT make
+`new PrismaClient()` work at runtime. Prisma 7 requires an explicit
+driver adapter passed to the `PrismaClient` constructor
+(`@prisma/adapter-pg` + `pg` for Postgres), or it throws
+`PrismaClientInitializationError` the first time a query runs — which
+only surfaces at build/runtime, not from `prisma generate`. See
+`src/modules/shared/prisma.ts` for the pattern; any script that
+constructs its own `PrismaClient` (e.g. integration tests) needs the
+same adapter wiring.
+
 ## Core entities
 - **Job** — site, status, timeline, requirements
 - **Personnel** — workers, roles, certifications, availability
