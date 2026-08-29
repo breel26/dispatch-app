@@ -1,3 +1,5 @@
 // procurement module — see CLAUDE.md for module boundaries and responsibilities.
-// Public exports for this module go here.
-export {};
+export * from "./schemas";
+export * from "./compareQuotes";
+export * from "./poNumber";
+export * from "./repository";
