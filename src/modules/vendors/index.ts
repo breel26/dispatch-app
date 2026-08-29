@@ -1,3 +1,6 @@
 // vendors module — see CLAUDE.md for module boundaries and responsibilities.
-// Public exports for this module go here.
-export {};
+export * from "./schemas";
+export * from "./matching";
+export * from "./quoteRequestEmail";
+export * from "./resend";
+export * from "./repository";
