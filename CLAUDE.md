@@ -37,6 +37,13 @@ every session, so stale commands waste turns.
 - `npx prisma migrate dev` — run a new DB migration
 - `npx prisma studio` — open Prisma's local DB browser GUI
 
+Note on Prisma 7: the database URL lives in `prisma.config.ts` at the
+project root, NOT in `prisma/schema.prisma`'s datasource block (that
+was the pattern through Prisma 6; Prisma 7 removed it and throws P1012
+if you try). `prisma.config.ts` requires the `dotenv` package as a
+dependency. This tripped us up once already — don't reintroduce a `url =
+env("DATABASE_URL")` line in schema.prisma.
+
 ## Core entities
 - **Job** — site, status, timeline, requirements
 - **Personnel** — workers, roles, certifications, availability
