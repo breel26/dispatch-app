@@ -31,33 +31,53 @@ export class InsufficientStockError extends Error {
 // Handles PERSONNEL and EQUIPMENT assignments — resources with a
 // schedule that can double-book.
 //
-// CONCURRENCY CAVEAT: this checks for conflicts, then creates the
-// assignment, as two separate steps. Under concurrent requests, two
-// dispatchers could both pass the conflict check for the same time slot
-// before either has created their assignment (classic check-then-act
-// race). Wrapping both steps in a single serializable transaction, or
-// adding a DB-level exclusion constraint on (resourceId, timerange),
-// closes this gap — neither is done here. Treat this function as
-// correct for the common case (dispatchers acting minutes apart) but
-// NOT safe against simultaneous double-booking attempts until one of
-// those fixes is added.
+// CONCURRENCY FIX (previously flagged as an open gap): the conflict
+// check and the create are now wrapped in a single Serializable
+// transaction. Postgres will abort one of two concurrent transactions
+// that both try to book the same resource for an overlapping window
+// with a serialization failure (error code 40001 / Prisma P2034) rather
+// than silently letting both succeed. We catch that specific error and
+// retry a bounded number of times, since a serialization failure is
+// expected/normal contention, not a real error, and the retry will see
+// the other transaction's committed assignment on its next attempt.
+const MAX_SERIALIZATION_RETRIES = 3;
+
 async function createPersonnelOrEquipmentAssignment(
   data: CreateAssignmentInput
 ): Promise<Assignment> {
   const resourceField = data.resourceType === "PERSONNEL" ? "personnelId" : "equipmentId";
   const resourceId = data.personnelId ?? data.equipmentId;
-
-  const existing = await prisma.assignment.findMany({
-    where: { [resourceField]: resourceId },
-    select: { id: true, jobId: true, startAt: true, endAt: true },
-  });
-
   const candidate = { startAt: data.startAt, endAt: data.endAt ?? null };
-  if (wouldDoubleBook(candidate, existing)) {
-    throw new SchedulingConflictError();
+
+  for (let attempt = 1; attempt <= MAX_SERIALIZATION_RETRIES; attempt++) {
+    try {
+      return await prisma.$transaction(
+        async (tx) => {
+          const existing = await tx.assignment.findMany({
+            where: { [resourceField]: resourceId },
+            select: { id: true, jobId: true, startAt: true, endAt: true },
+          });
+
+          if (wouldDoubleBook(candidate, existing)) {
+            throw new SchedulingConflictError();
+          }
+
+          return tx.assignment.create({ data });
+        },
+        { isolationLevel: "Serializable" }
+      );
+    } catch (err) {
+      const isSerializationFailure =
+        err instanceof Error && "code" in err && (err as { code?: string }).code === "P2034";
+      if (isSerializationFailure && attempt < MAX_SERIALIZATION_RETRIES) {
+        continue; // real contention, safe to retry — loop again
+      }
+      throw err; // either a genuine SchedulingConflictError, or retries exhausted
+    }
   }
 
-  return prisma.assignment.create({ data });
+  // Unreachable, but keeps TypeScript satisfied about a return on every path.
+  throw new Error("createPersonnelOrEquipmentAssignment: exhausted retries unexpectedly");
 }
 
 // Handles MATERIAL assignments — these consume stock rather than
@@ -116,17 +136,32 @@ export async function listAssignmentsForResource(
 }
 
 // Removing a PERSONNEL/EQUIPMENT assignment just deletes the row — no
-// stock to restore. A MATERIAL assignment's removal SHOULD restore the
-// deducted quantity but that's not implemented here yet; flagging
-// rather than silently leaving it half-done.
+// stock to restore. Removing a MATERIAL assignment restores the
+// deducted quantity atomically in the same transaction as the delete,
+// so a crash between the two steps can't leave stock permanently
+// short. (Previously this threw "not implemented" for MATERIAL — that
+// gap is now closed.)
 export async function cancelAssignment(id: string): Promise<Assignment> {
   const assignment = await prisma.assignment.findUniqueOrThrow({ where: { id } });
+
   if (assignment.resourceType === "MATERIAL") {
-    throw new Error(
-      "cancelAssignment for MATERIAL is not yet implemented — it needs to restore " +
-      "the deducted stock atomically, not just delete the row. Do not call this for " +
-      "material assignments until that's built."
-    );
+    if (!assignment.materialId || assignment.quantity == null) {
+      // Should be impossible given the create-time validation, but
+      // fail loudly rather than silently skip the stock restoration if
+      // it somehow happens.
+      throw new Error(
+        `Assignment ${id} is MATERIAL type but missing materialId or quantity — cannot safely restore stock`
+      );
+    }
+
+    return prisma.$transaction(async (tx) => {
+      await tx.material.update({
+        where: { id: assignment.materialId! },
+        data: { quantityOnHand: { increment: assignment.quantity! } },
+      });
+      return tx.assignment.delete({ where: { id } });
+    });
   }
+
   return prisma.assignment.delete({ where: { id } });
 }
