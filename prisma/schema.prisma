@@ -1,0 +1,292 @@
+// Prisma schema for the construction dispatching app.
+// See CLAUDE.md for the module boundaries these models correspond to.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ---------------------------------------------------------------------
+// jobs module
+// ---------------------------------------------------------------------
+
+enum JobStatus {
+  PLANNED
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  CANCELLED
+}
+
+model Job {
+  id          String    @id @default(cuid())
+  name        String
+  siteAddress String
+  status      JobStatus @default(PLANNED)
+  startDate   DateTime?
+  endDate     DateTime?
+  notes       String?
+
+  assignments      Assignment[]
+  purchaseOrders   PurchaseOrder[]
+  quoteRequests    QuoteRequest[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+}
+
+// ---------------------------------------------------------------------
+// dispatch module
+// ---------------------------------------------------------------------
+
+enum AssignmentResourceType {
+  PERSONNEL
+  MATERIAL
+  EQUIPMENT
+}
+
+// A single assignment links one resource (personnel, material, or
+// equipment) to a job for a time window. Only one of personnelId /
+// materialId / equipmentId should be set, matching resourceType -
+// enforced in application code (see modules/dispatch), not by the DB,
+// since Prisma doesn't support conditional foreign keys directly.
+model Assignment {
+  id           String                 @id @default(cuid())
+  job          Job                    @relation(fields: [jobId], references: [id])
+  jobId        String
+  resourceType AssignmentResourceType
+
+  personnel   Personnel? @relation(fields: [personnelId], references: [id])
+  personnelId String?
+
+  material   Material? @relation(fields: [materialId], references: [id])
+  materialId String?
+
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId String?
+
+  quantity  Float? // relevant for materials/equipment, null for personnel
+  startAt   DateTime
+  endAt     DateTime?
+  notes     String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobId])
+  @@index([personnelId])
+  @@index([materialId])
+  @@index([equipmentId])
+}
+
+// ---------------------------------------------------------------------
+// inventory module
+// ---------------------------------------------------------------------
+
+model Personnel {
+  id             String   @id @default(cuid())
+  name           String
+  role           String
+  certifications String[] // e.g. ["OSHA-30", "Crane Operator"]
+  isActive       Boolean  @default(true)
+
+  assignments Assignment[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Material {
+  id                String   @id @default(cuid())
+  sku               String   @unique
+  name              String
+  unit              String // e.g. "cubic yard", "bag", "linear ft"
+  quantityOnHand    Float    @default(0)
+  reorderThreshold  Float?
+
+  assignments    Assignment[]
+  quotes         Quote[]
+  quoteRequests  QuoteRequestItem[]
+  poLineItems    PurchaseOrderLineItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+enum EquipmentStatus {
+  AVAILABLE
+  ASSIGNED
+  MAINTENANCE
+  OUT_OF_SERVICE
+}
+
+model Equipment {
+  id       String          @id @default(cuid())
+  name     String
+  type     String
+  status   EquipmentStatus @default(AVAILABLE)
+  location String?
+
+  assignments   Assignment[]
+  quotes        Quote[]
+  quoteRequests QuoteRequestItem[]
+  poLineItems   PurchaseOrderLineItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------
+// vendors module
+// ---------------------------------------------------------------------
+
+model Vendor {
+  id         String   @id @default(cuid())
+  name       String
+  email      String
+  phone      String?
+  categories String[] // e.g. ["concrete", "equipment rental"]
+
+  quoteRequests   QuoteRequest[]
+  quotes          Quote[]
+  purchaseOrders  PurchaseOrder[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+// ---------------------------------------------------------------------
+// procurement module
+// ---------------------------------------------------------------------
+
+enum QuoteRequestStatus {
+  DRAFT
+  SENT
+  RESPONDED
+  EXPIRED
+  CANCELLED
+}
+
+model QuoteRequest {
+  id     String             @id @default(cuid())
+  job    Job                @relation(fields: [jobId], references: [id])
+  jobId  String
+  vendor Vendor             @relation(fields: [vendorId], references: [id])
+  vendorId String
+  status QuoteRequestStatus @default(DRAFT)
+  sentAt DateTime?
+
+  items QuoteRequestItem[]
+  quote Quote?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobId])
+  @@index([vendorId])
+}
+
+// A single line item within a quote request (one material or one
+// piece of equipment being requested).
+model QuoteRequestItem {
+  id             String        @id @default(cuid())
+  quoteRequest   QuoteRequest  @relation(fields: [quoteRequestId], references: [id])
+  quoteRequestId String
+
+  material   Material? @relation(fields: [materialId], references: [id])
+  materialId String?
+
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId String?
+
+  quantity Float
+
+  @@index([quoteRequestId])
+}
+
+model Quote {
+  id             String       @id @default(cuid())
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id])
+  quoteRequestId String       @unique
+  vendor         Vendor       @relation(fields: [vendorId], references: [id])
+  vendorId       String
+
+  material   Material? @relation(fields: [materialId], references: [id])
+  materialId String?
+
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId String?
+
+  price      Float
+  leadTimeDays Int?
+  expiresAt  DateTime?
+
+  purchaseOrder PurchaseOrder?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([vendorId])
+}
+
+enum PurchaseOrderStatus {
+  DRAFT
+  ISSUED
+  ACKNOWLEDGED
+  FULFILLED
+  CANCELLED
+}
+
+// PO numbers are generated from this Postgres sequence, not app-side
+// counting, so concurrent PO creation never collides. See
+// modules/procurement for the generation function.
+model PurchaseOrderSequence {
+  id           Int    @id @default(1)
+  lastPoNumber Int    @default(0)
+}
+
+model PurchaseOrder {
+  id       String              @id @default(cuid())
+  poNumber String              @unique // formatted from PurchaseOrderSequence, e.g. "PO-000123"
+  job      Job                 @relation(fields: [jobId], references: [id])
+  jobId    String
+  vendor   Vendor              @relation(fields: [vendorId], references: [id])
+  vendorId String
+  status   PurchaseOrderStatus @default(DRAFT)
+
+  quote   Quote?  @relation(fields: [quoteId], references: [id])
+  quoteId String? @unique
+
+  lineItems PurchaseOrderLineItem[]
+
+  issuedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([jobId])
+  @@index([vendorId])
+}
+
+model PurchaseOrderLineItem {
+  id              String        @id @default(cuid())
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrderId String
+
+  material   Material? @relation(fields: [materialId], references: [id])
+  materialId String?
+
+  equipment   Equipment? @relation(fields: [equipmentId], references: [id])
+  equipmentId String?
+
+  quantity  Float
+  unitPrice Float
+
+  @@index([purchaseOrderId])
+}
