@@ -2,6 +2,7 @@ import { listJobs } from "@/modules/jobs/repository";
 import { listVendors } from "@/modules/vendors/repository";
 import { listMaterials, listEquipment } from "@/modules/inventory/repository";
 import QuoteRequestForm from "../QuoteRequestForm";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -10,12 +11,13 @@ interface NewQuoteRequestPageProps {
 }
 
 export default async function NewQuoteRequestPage({ searchParams }: NewQuoteRequestPageProps) {
+  const { orgId } = await requireAuthContext();
   const { jobId } = await searchParams;
   const [jobs, vendors, materials, equipment] = await Promise.all([
-    listJobs({ limit: 200 }),
-    listVendors(),
-    listMaterials(),
-    listEquipment(),
+    listJobs(orgId, { limit: 200 }),
+    listVendors(orgId),
+    listMaterials(orgId),
+    listEquipment(orgId),
   ]);
 
   return (

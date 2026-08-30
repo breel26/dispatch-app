@@ -1,22 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
 
-const mockFindUniqueOrThrow = vi.fn();
+// sendQuoteRequest now reads through the repository rather than reaching
+// for the Prisma client directly - it was the one place in the codebase
+// that bypassed its own module's data-access layer.
+const mockGetQuoteRequestById = vi.fn();
 const mockSendVendorEmail = vi.fn();
 const mockMarkQuoteRequestSent = vi.fn();
-
-vi.mock("@/modules/shared/prisma", () => ({
-  prisma: {
-    quoteRequest: {
-      findUniqueOrThrow: (...args: unknown[]) => mockFindUniqueOrThrow(...args),
-    },
-  },
-}));
 
 vi.mock("@/modules/vendors/resend", () => ({
   sendVendorEmail: (...args: unknown[]) => mockSendVendorEmail(...args),
 }));
 
 vi.mock("../repository", () => ({
+  getQuoteRequestById: (...args: unknown[]) => mockGetQuoteRequestById(...args),
   markQuoteRequestSent: (...args: unknown[]) => mockMarkQuoteRequestSent(...args),
 }));
 
@@ -29,7 +25,7 @@ const QUOTE_REQUEST = {
 
 describe("sendQuoteRequest", () => {
   beforeEach(() => {
-    mockFindUniqueOrThrow.mockReset();
+    mockGetQuoteRequestById.mockReset();
     mockSendVendorEmail.mockReset();
     mockMarkQuoteRequestSent.mockReset();
     process.env.RESEND_API_KEY = "test-key";
@@ -44,11 +40,11 @@ describe("sendQuoteRequest", () => {
 
   it("sends the email to the vendor and then marks the request sent", async () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
-    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockGetQuoteRequestById.mockResolvedValue(QUOTE_REQUEST);
     mockSendVendorEmail.mockResolvedValue({ id: "email-1" });
     mockMarkQuoteRequestSent.mockResolvedValue({ id: "qr-1", status: "SENT" });
 
-    await sendQuoteRequest("qr-1");
+    await sendQuoteRequest("org-1", "qr-1");
 
     expect(mockSendVendorEmail).toHaveBeenCalledTimes(1);
     const sent = mockSendVendorEmail.mock.calls[0][0];
@@ -56,7 +52,7 @@ describe("sendQuoteRequest", () => {
     expect(sent.fromEmail).toBe("dispatch@example.com");
     expect(sent.subject).toContain("Riverside Phase 2");
     expect(sent.text).toContain("3000 psi concrete");
-    expect(mockMarkQuoteRequestSent).toHaveBeenCalledWith("qr-1");
+    expect(mockMarkQuoteRequestSent).toHaveBeenCalledWith("org-1", "qr-1");
   });
 
   // Reply-To is separate from From because Resend constrains the sender
@@ -64,11 +60,11 @@ describe("sendQuoteRequest", () => {
   it("routes replies to DISPATCH_REPLY_TO_EMAIL when it is set", async () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
     process.env.DISPATCH_REPLY_TO_EMAIL = "dispatch.app.test@gmail.com";
-    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockGetQuoteRequestById.mockResolvedValue(QUOTE_REQUEST);
     mockSendVendorEmail.mockResolvedValue({ id: "email-1" });
     mockMarkQuoteRequestSent.mockResolvedValue({ id: "qr-1", status: "SENT" });
 
-    await sendQuoteRequest("qr-1");
+    await sendQuoteRequest("org-1", "qr-1");
 
     const sent = mockSendVendorEmail.mock.calls[0][0];
     expect(sent.replyToEmail).toBe("dispatch.app.test@gmail.com");
@@ -78,11 +74,11 @@ describe("sendQuoteRequest", () => {
 
   it("falls back to the From address for replies when DISPATCH_REPLY_TO_EMAIL is unset", async () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
-    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockGetQuoteRequestById.mockResolvedValue(QUOTE_REQUEST);
     mockSendVendorEmail.mockResolvedValue({ id: "email-1" });
     mockMarkQuoteRequestSent.mockResolvedValue({ id: "qr-1", status: "SENT" });
 
-    await sendQuoteRequest("qr-1");
+    await sendQuoteRequest("org-1", "qr-1");
 
     const sent = mockSendVendorEmail.mock.calls[0][0];
     expect(sent.replyToEmail).toBe("dispatch@example.com");
@@ -92,10 +88,10 @@ describe("sendQuoteRequest", () => {
   // being marked SENT regardless of whether an email ever went out.
   it("does NOT mark the request sent when the email fails", async () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
-    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockGetQuoteRequestById.mockResolvedValue(QUOTE_REQUEST);
     mockSendVendorEmail.mockRejectedValue(new Error("Resend is down"));
 
-    await expect(sendQuoteRequest("qr-1")).rejects.toThrow("Resend is down");
+    await expect(sendQuoteRequest("org-1", "qr-1")).rejects.toThrow("Resend is down");
     expect(mockMarkQuoteRequestSent).not.toHaveBeenCalled();
   });
 
@@ -103,7 +99,7 @@ describe("sendQuoteRequest", () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
     delete process.env.RESEND_API_KEY;
 
-    await expect(sendQuoteRequest("qr-1")).rejects.toThrow(/RESEND_API_KEY is not set/);
+    await expect(sendQuoteRequest("org-1", "qr-1")).rejects.toThrow(/RESEND_API_KEY is not set/);
     expect(mockSendVendorEmail).not.toHaveBeenCalled();
     expect(mockMarkQuoteRequestSent).not.toHaveBeenCalled();
   });
@@ -112,18 +108,18 @@ describe("sendQuoteRequest", () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
     delete process.env.DISPATCH_FROM_EMAIL;
 
-    await expect(sendQuoteRequest("qr-1")).rejects.toThrow(/DISPATCH_FROM_EMAIL is not set/);
+    await expect(sendQuoteRequest("org-1", "qr-1")).rejects.toThrow(/DISPATCH_FROM_EMAIL is not set/);
     expect(mockSendVendorEmail).not.toHaveBeenCalled();
   });
 
   it("refuses to send when the vendor has no email on file", async () => {
     const { sendQuoteRequest } = await import("../sendQuoteRequest");
-    mockFindUniqueOrThrow.mockResolvedValue({
+    mockGetQuoteRequestById.mockResolvedValue({
       ...QUOTE_REQUEST,
       vendor: { name: "Acme Concrete", email: "" },
     });
 
-    await expect(sendQuoteRequest("qr-1")).rejects.toThrow(/no email address on file/);
+    await expect(sendQuoteRequest("org-1", "qr-1")).rejects.toThrow(/no email address on file/);
     expect(mockSendVendorEmail).not.toHaveBeenCalled();
     expect(mockMarkQuoteRequestSent).not.toHaveBeenCalled();
   });

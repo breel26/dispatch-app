@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listPersonnel } from "@/modules/inventory/repository";
 import styles from "../list.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -9,9 +10,10 @@ interface PersonnelPageProps {
 }
 
 export default async function PersonnelPage({ searchParams }: PersonnelPageProps) {
+  const { orgId } = await requireAuthContext();
   const { all } = await searchParams;
   const showAll = all === "true";
-  const personnel = await listPersonnel(!showAll);
+  const personnel = await listPersonnel(orgId, !showAll);
 
   return (
     <div>

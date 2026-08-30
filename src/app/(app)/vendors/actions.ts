@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createVendor, updateVendor, deleteVendor } from "@/modules/vendors/repository";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export interface ActionState {
   error?: string;
@@ -36,7 +37,8 @@ function buildVendorInput(formData: FormData) {
 export async function createVendorAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   let vendor;
   try {
-    vendor = await createVendor(buildVendorInput(formData));
+    const ctx = await requireAuthContext();
+    vendor = await createVendor(ctx.orgId, buildVendorInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -50,7 +52,8 @@ export async function updateVendorAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await updateVendor(vendorId, buildVendorInput(formData));
+    const ctx = await requireAuthContext();
+    await updateVendor(ctx.orgId, vendorId, buildVendorInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -61,7 +64,8 @@ export async function updateVendorAction(
 
 export async function deleteVendorAction(vendorId: string): Promise<ActionState> {
   try {
-    await deleteVendor(vendorId);
+    const ctx = await requireAuthContext();
+    await deleteVendor(ctx.orgId, vendorId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

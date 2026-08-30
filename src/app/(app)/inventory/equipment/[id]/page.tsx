@@ -4,6 +4,7 @@ import { getEquipmentById } from "@/modules/inventory/repository";
 import { listAssignmentsForResource } from "@/modules/dispatch/repository";
 import { listJobs } from "@/modules/jobs/repository";
 import styles from "../../detail.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -12,13 +13,14 @@ interface EquipmentDetailPageProps {
 }
 
 export default async function EquipmentDetailPage({ params }: EquipmentDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const equipment = await getEquipmentById(id);
+  const equipment = await getEquipmentById(orgId, id);
   if (!equipment) notFound();
 
   const [assignments, jobs] = await Promise.all([
-    listAssignmentsForResource("EQUIPMENT", id),
-    listJobs({ limit: 200 }),
+    listAssignmentsForResource(orgId, "EQUIPMENT", id),
+    listJobs(orgId, { limit: 200 }),
   ]);
   const jobsById = new Map(jobs.map((j) => [j.id, j]));
 

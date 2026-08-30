@@ -10,6 +10,7 @@ import JobStatusForm from "./JobStatusForm";
 import AssignmentForm from "./AssignmentForm";
 import CancelAssignmentButton from "./CancelAssignmentButton";
 import styles from "./page.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -18,18 +19,19 @@ interface JobDetailPageProps {
 }
 
 export default async function JobDetailPage({ params }: JobDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const job = await getJobById(id);
+  const job = await getJobById(orgId, id);
   if (!job) notFound();
 
   const [assignments, personnel, materials, equipment, quoteRequests, purchaseOrders] =
     await Promise.all([
-      listAssignmentsForJob(id),
-      listPersonnel(false),
-      listMaterials(),
-      listEquipment(),
-      listQuoteRequestsForJob(id),
-      listPurchaseOrdersForJob(id),
+      listAssignmentsForJob(orgId, id),
+      listPersonnel(orgId, false),
+      listMaterials(orgId),
+      listEquipment(orgId),
+      listQuoteRequestsForJob(orgId, id),
+      listPurchaseOrdersForJob(orgId, id),
     ]);
 
   const personnelById = new Map(personnel.map((p) => [p.id, p]));

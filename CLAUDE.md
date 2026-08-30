@@ -40,11 +40,12 @@ every session, so stale commands waste turns.
 - `npm run typecheck` — TypeScript type check
 - `npx prisma migrate dev` — run a new DB migration
 - `npx prisma studio` — open Prisma's local DB browser GUI
-- `npm run prisma:seed` — seed the `PurchaseOrderSequence` row (id: 1,
-  lastPoNumber: 0) that PO-number generation requires. Migrations only
-  create the table, not this row — run this once against any fresh
-  database (including a new dev/preview DB) before creating a purchase
-  order, or `createPurchaseOrder`/`nextPoNumber` will throw P2025.
+- `npm run test:integration` — tests that need a real Postgres (DB-level
+  constraints, PO-number concurrency). Not part of `npm test`.
+
+There is no seed step. PO numbers come from a Postgres sequence, which
+needs no seeding — a fresh database is usable straight after
+`prisma migrate deploy`.
 
 Note on Prisma 7: the database URL lives in `prisma.config.ts` at the
 project root, NOT in `prisma/schema.prisma`'s datasource block (that
@@ -64,6 +65,14 @@ only surfaces at build/runtime, not from `prisma generate`. See
 constructs its own `PrismaClient` (e.g. integration tests) needs the
 same adapter wiring.
 
+**`prisma/schema.prisma` is not the whole schema.** Prisma cannot express
+CHECK or EXCLUDE constraints, so several invariants live only in
+hand-written migration SQL and are listed in comments on the models that
+carry them. Read `prisma/migrations/` before assuming what the database
+will accept. (Verified: `prisma migrate diff` reports zero drift with
+those constraints in place — Prisma leaves constraints it does not model
+alone.)
+
 ## Core entities
 - **Job** — site, status, timeline, requirements
 - **Personnel** — workers, roles, certifications, availability
@@ -71,13 +80,20 @@ same adapter wiring.
 - **Equipment** — type, availability, current location/assignment
 - **Vendor** — contact info, email, categories supplied, price history
 - **QuoteRequest** — vendor, item(s), sent date, status
-- **Quote** — vendor, item, price, lead time, expiration
+- **Quote** — a vendor's response to one request: the envelope (expiry,
+  default lead time). The prices live in **QuoteLineItem**, one per
+  requested item. A quote prices every line it was asked about; it is not
+  a single number.
 - **PurchaseOrder** — PO number, vendor, line items, status, linked job
-- **Assignment** — links personnel/material/equipment → job, with scheduling
+- **Assignment** — links personnel/material/equipment → job, with
+  scheduling. Cancelled by setting `cancelledAt`, never deleted.
+- **StockMovement** — append-only ledger of why material stock changed.
+  `Material.quantityOnHand` is a cached rollup of it.
 
-PO numbers are generated from a DB sequence (atomic under concurrency) —
-never app-side `count + 1` logic, which breaks when two dispatchers act
-at the same time.
+PO numbers come from the `purchase_order_number_seq` Postgres sequence
+(atomic under concurrency) — never app-side `count + 1` logic, which
+breaks when two dispatchers act at the same time. Gaps are expected and
+harmless: `nextval()` is not rolled back by a failed transaction.
 
 ## Module boundaries
 Organized by domain, not technical layer, so new features slot in without
@@ -90,11 +106,13 @@ touching unrelated modules:
 - `inventory` — materials/equipment tracking, availability
 - `import-export` — shared DB ↔ JSON ↔ (Excel/CSV/etc.) conversion, used
   by any module that needs it
-- `shared` — types, PO number generation, email templates
+- `shared` — Prisma client, money, auth context, error classification
 
 Each module owns its own types, business logic, and tests. Cross-module
 calls go through clear exported functions — avoid modules reaching into
-each other's internals.
+each other's internals. There are no barrel `index.ts` files; import the
+specific file (`@/modules/jobs/repository`), which is what every call
+site already did.
 
 ## Import/export pattern
 Excel and other file formats are never touched directly by business logic.
@@ -142,6 +160,11 @@ The flow is always:
   fixtures (malformed spreadsheet, missing required field, wrong type).
 - Run the test suite after every meaningful change, not just at the end
   of a session.
+- Tests that need a real database live in `*.integration.test.ts` and run
+  under `npm run test:integration`, separate from `npm test`. Put a test
+  there when it proves something only Postgres can (a CHECK or EXCLUDE
+  constraint firing, sequence atomicity) — and keep the fast unit test of
+  the surrounding logic too; they prove different things.
 - Before saying a task is complete: run tests, linter, and typechecker.
   All three, every time.
 - If a test fails, fix the root cause — don't loosen an assertion to make
@@ -160,5 +183,46 @@ The flow is always:
   the change — ask before doing an unrequested refactor.
 
 ## Architecture notes
-[Expand as the project takes shape: folder structure, auth flow, email
-template locations, deployment target.]
+
+Four conventions run through the codebase. Breaking one is usually a bug,
+so they are worth knowing before writing anything.
+
+**Money is `Decimal`, never `number`.** Every price column is
+`DECIMAL(14,4)`; all arithmetic goes through `modules/shared/money.ts`.
+Prices stay strings from the form until Zod converts them — passing one
+through `Number()` reintroduces the float error the Decimal columns exist
+to prevent. Line totals round to cents individually, then sum, which is
+how an invoice is totalled.
+
+**Every tenant-owned row carries `orgId`, and every repository function
+takes it as its first argument.** It is verbose deliberately: a query that
+forgets to scope by tenant is a compile error, not a data leak. Writes
+filter on `{ id, orgId }` so another org's row reads as "not found".
+Server Actions get it from `requireAuthContext()`, which is the single
+place that calls Clerk. Note the current install runs single-org
+(`DEFAULT_ORG_ID`) with everyone an admin, because Clerk Organizations is
+not enabled — see `docs/architecture-hardening.md` §3.
+
+**Invariants the database can enforce live in the database.** CHECK
+constraints for the "exactly one resource FK" rule, EXCLUDE constraints
+that make double-booking impossible. Application-level checks that
+duplicate them exist only to produce a friendlier error first — they are
+not the guarantee, and are not written as though they were.
+
+**Stock changes go through the ledger.** `applyStockDelta` is the only
+thing that may touch `Material.quantityOnHand`, and it writes the movement
+row and the rollup in one transaction.
+
+**One write path.** The UI talks to Server Actions; there is no REST CRUD
+layer (only `/api/health`). If an external consumer ever needs an API,
+generate it from the same Zod schemas rather than hand-writing a second
+path that has to be kept in sync.
+
+Server Components read through repositories directly; mutations go through
+Server Actions in `actions.ts` beside the routes that use them. Styling is
+CSS Modules. `requireAuthContext()` goes *inside* an action's try/catch
+(so a signed-out caller gets an inline message) and `redirect()` stays
+*outside* it (Next signals navigation by throwing).
+
+The full rationale for the current structure, including the tradeoffs
+accepted and rejected, is in `docs/architecture-hardening.md`.

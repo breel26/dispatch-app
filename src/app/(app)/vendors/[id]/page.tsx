@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getVendorById } from "@/modules/vendors/repository";
 import DeleteVendorForm from "./DeleteVendorForm";
 import styles from "./detail.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -11,8 +12,9 @@ interface VendorDetailPageProps {
 }
 
 export default async function VendorDetailPage({ params }: VendorDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const vendor = await getVendorById(id);
+  const vendor = await getVendorById(orgId, id);
   if (!vendor) notFound();
 
   return (

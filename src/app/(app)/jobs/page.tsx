@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listJobs } from "@/modules/jobs/repository";
 import { JOB_STATUSES, type JobStatus } from "@/modules/jobs/types";
 import styles from "./page.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,10 @@ interface JobsPageProps {
 }
 
 export default async function JobsPage({ searchParams }: JobsPageProps) {
+  const { orgId } = await requireAuthContext();
   const { status } = await searchParams;
   const activeStatus = status && JOB_STATUSES.includes(status as JobStatus) ? (status as JobStatus) : undefined;
-  const jobs = await listJobs({ status: activeStatus, limit: 100 });
+  const jobs = await listJobs(orgId, { status: activeStatus, limit: 100 });
 
   return (
     <div>

@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listQuoteRequests, listQuoteRequestsForJob } from "@/modules/procurement/repository";
 import styles from "../list.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +10,9 @@ interface QuoteRequestsPageProps {
 }
 
 export default async function QuoteRequestsPage({ searchParams }: QuoteRequestsPageProps) {
+  const { orgId } = await requireAuthContext();
   const { jobId } = await searchParams;
-  const quoteRequests = jobId ? await listQuoteRequestsForJob(jobId) : await listQuoteRequests();
+  const quoteRequests = jobId ? await listQuoteRequestsForJob(orgId, jobId) : await listQuoteRequests(orgId);
 
   return (
     <div>

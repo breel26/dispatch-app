@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getQuoteRequestById } from "@/modules/procurement/repository";
-import { listMaterials, listEquipment } from "@/modules/inventory/repository";
+import { itemKeyFor } from "@/modules/procurement/compareQuotes";
+import { formatMoney, lineTotal, sumLineTotals } from "@/modules/shared/money";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 import MarkSentButton from "./MarkSentButton";
-import RecordQuoteForm from "./RecordQuoteForm";
+import RecordQuoteForm, { type QuotedItemRow } from "./RecordQuoteForm";
 import styles from "../../detail.module.css";
 
 export const dynamic = "force-dynamic";
@@ -12,27 +14,25 @@ interface QuoteRequestDetailPageProps {
   params: Promise<{ id: string }>;
 }
 
+const EQUIPMENT_UNIT = "ea";
+
 export default async function QuoteRequestDetailPage({ params }: QuoteRequestDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const quoteRequest = await getQuoteRequestById(id);
+  const quoteRequest = await getQuoteRequestById(orgId, id);
   if (!quoteRequest) notFound();
 
-  const [materials, equipment] = await Promise.all([listMaterials(), listEquipment()]);
-  const materialsById = new Map(materials.map((m) => [m.id, m]));
-  const equipmentById = new Map(equipment.map((e) => [e.id, e]));
-
-  function itemLabel(item: NonNullable<typeof quoteRequest>["items"][number]): string {
-    if (item.materialId) return materialsById.get(item.materialId)?.name ?? item.materialId;
-    if (item.equipmentId) return equipmentById.get(item.equipmentId)?.name ?? item.equipmentId;
-    return "—";
-  }
-
-  const itemOptions = quoteRequest.items.map((item) => ({
-    id: item.id,
-    type: item.materialId ? ("MATERIAL" as const) : ("EQUIPMENT" as const),
-    resourceId: (item.materialId ?? item.equipmentId)!,
-    label: `${itemLabel(item)} (qty ${item.quantity})`,
+  // Items arrive with their material/equipment joined, so labelling them
+  // needs no extra catalogue query.
+  const itemRows: QuotedItemRow[] = quoteRequest.items.map((item) => ({
+    itemKey: itemKeyFor(item.materialId, item.equipmentId),
+    label: item.material?.name ?? item.equipment?.name ?? "Unknown item",
+    quantity: item.quantity,
+    unit: item.material?.unit ?? EQUIPMENT_UNIT,
   }));
+
+  const quote = quoteRequest.quote;
+  const quoteTotal = quote ? sumLineTotals(quote.lineItems) : null;
 
   return (
     <div>
@@ -46,11 +46,11 @@ export default async function QuoteRequestDetailPage({ params }: QuoteRequestDet
       {quoteRequest.status === "DRAFT" && <MarkSentButton quoteRequestId={quoteRequest.id} />}
 
       <div className={styles.section}>
-        <h2>Items</h2>
+        <h2>Items requested</h2>
         <ul>
-          {quoteRequest.items.map((item) => (
-            <li key={item.id}>
-              {itemLabel(item)} — quantity {item.quantity}
+          {itemRows.map((item) => (
+            <li key={item.itemKey}>
+              {item.label} — quantity {item.quantity} {item.unit}
             </li>
           ))}
         </ul>
@@ -58,21 +58,47 @@ export default async function QuoteRequestDetailPage({ params }: QuoteRequestDet
 
       <div className={styles.section}>
         <h2>Quote</h2>
-        {quoteRequest.quote ? (
+        {quote ? (
           <div>
-            <p>Price: ${quoteRequest.quote.price.toFixed(2)}</p>
-            {quoteRequest.quote.leadTimeDays != null && (
-              <p>Lead time: {quoteRequest.quote.leadTimeDays} days</p>
+            <table className={styles.dataTable}>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th>Qty</th>
+                  <th>Unit price</th>
+                  <th>Extended</th>
+                  <th>Lead time</th>
+                </tr>
+              </thead>
+              <tbody>
+                {quote.lineItems.map((line) => (
+                  <tr key={line.id}>
+                    <td>{line.material?.name ?? line.equipment?.name ?? "—"}</td>
+                    <td>{line.quantity}</td>
+                    <td>{formatMoney(line.unitPrice)}</td>
+                    <td>{formatMoney(lineTotal(line.quantity, line.unitPrice))}</td>
+                    <td>
+                      {(line.leadTimeDays ?? quote.leadTimeDays) != null
+                        ? `${line.leadTimeDays ?? quote.leadTimeDays} days`
+                        : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+            {quoteTotal && (
+              <p style={{ marginTop: "0.5rem", fontWeight: 600 }}>
+                Quote total: {formatMoney(quoteTotal)}
+              </p>
             )}
-            {quoteRequest.quote.expiresAt && (
-              <p>Expires: {quoteRequest.quote.expiresAt.toLocaleDateString()}</p>
-            )}
+            {quote.expiresAt && <p>Expires: {quote.expiresAt.toLocaleDateString()}</p>}
+            {quote.notes && <p className={styles.meta}>{quote.notes}</p>}
           </div>
         ) : (
           <RecordQuoteForm
             quoteRequestId={quoteRequest.id}
             vendorId={quoteRequest.vendorId}
-            items={itemOptions}
+            items={itemRows}
           />
         )}
       </div>

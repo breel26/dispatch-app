@@ -4,11 +4,24 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { createJob, updateJob, updateJobStatus, cancelJob } from "@/modules/jobs/repository";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
+import { requireAuthContext } from "@/modules/shared/currentUser";
+import { assertCan } from "@/modules/shared/authContext";
 import type { JobStatus } from "@/modules/jobs/types";
 
 export interface ActionState {
   error?: string;
 }
+
+// Every action resolves the caller's org before touching the database and
+// passes it down. The middleware already blocks unauthenticated requests;
+// this is what stops an authenticated user from reaching another tenant's
+// rows, which the middleware cannot do on its own.
+//
+// Note that requireAuthContext() goes INSIDE the try: it throws for a
+// signed-out caller, and that should surface as an inline message rather
+// than an unhandled exception. redirect() stays OUTSIDE, because Next
+// signals navigation by throwing and catching it here would swallow the
+// navigation and report it as a failure.
 
 // FormData values are always strings; an omitted optional field still
 // arrives as "" rather than being absent. The Zod schemas use
@@ -40,7 +53,8 @@ function buildJobInput(formData: FormData) {
 export async function createJobAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   let job;
   try {
-    job = await createJob(buildJobInput(formData));
+    const ctx = await requireAuthContext();
+    job = await createJob(ctx.orgId, buildJobInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -54,7 +68,8 @@ export async function updateJobAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await updateJob(jobId, buildJobInput(formData));
+    const ctx = await requireAuthContext();
+    await updateJob(ctx.orgId, jobId, buildJobInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -73,7 +88,8 @@ export async function updateJobStatusAction(
     return { error: "status is required" };
   }
   try {
-    await updateJobStatus(jobId, status);
+    const ctx = await requireAuthContext();
+    await updateJobStatus(ctx.orgId, jobId, status);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -82,9 +98,13 @@ export async function updateJobStatusAction(
   return {};
 }
 
+// Cancelling a job is admin-only: it stops work that crews and vendors are
+// already scheduled against.
 export async function cancelJobAction(jobId: string): Promise<ActionState> {
   try {
-    await cancelJob(jobId);
+    const ctx = await requireAuthContext();
+    assertCan(ctx, "cancelJob");
+    await cancelJob(ctx.orgId, jobId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

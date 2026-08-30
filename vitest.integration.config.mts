@@ -10,6 +10,14 @@ export default defineConfig({
     environment: "node",
     globals: true,
     include: ["**/*.integration.test.ts"],
+    // These talk to a real database, so DATABASE_URL has to be loaded the
+    // same way the app loads it. Without this the suite fails with an
+    // opaque connection error rather than saying what is missing.
+    setupFiles: ["dotenv/config"],
+    // Overlap and PO-number tests intentionally contend for the same rows;
+    // running files in parallel would have them fighting each other rather
+    // than testing the constraints.
+    fileParallelism: false,
   },
   resolve: {
     alias: {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listEquipment } from "@/modules/inventory/repository";
 import type { Equipment } from "@prisma/client";
 import styles from "../list.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -17,11 +18,12 @@ interface EquipmentPageProps {
 }
 
 export default async function EquipmentPage({ searchParams }: EquipmentPageProps) {
+  const { orgId } = await requireAuthContext();
   const { status } = await searchParams;
   const activeStatus = EQUIPMENT_STATUSES.includes(status as Equipment["status"])
     ? (status as Equipment["status"])
     : undefined;
-  const equipment = await listEquipment(activeStatus);
+  const equipment = await listEquipment(orgId, activeStatus);
 
   return (
     <div>

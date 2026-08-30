@@ -74,3 +74,34 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Explains a form's convention before the fields — used by the quote
+   entry grid to say that a blank price means "not quoted". */
+.hint {
+  margin: 0 0 1rem;
+  font-size: 0.875rem;
+  color: #57606a;
+  line-height: 1.5;
+}
+
+/* Shared style for the small data tables on detail pages (PO line items,
+   quote lines, stock history). Cell padding matters here: without it the
+   column headers run together and a price column is unreadable. */
+.dataTable {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.dataTable th,
+.dataTable td {
+  text-align: left;
+  padding: 0.4rem 0.75rem 0.4rem 0;
+  border-bottom: 1px solid #e5e7eb;
+  vertical-align: top;
+}
+
+.dataTable th {
+  font-weight: 600;
+  white-space: nowrap;
+}

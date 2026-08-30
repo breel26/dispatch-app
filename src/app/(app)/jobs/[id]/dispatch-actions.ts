@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createAssignment, cancelAssignment } from "@/modules/dispatch/repository";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 import type { ActionState } from "../actions";
 
 const RESOURCE_TYPES = ["PERSONNEL", "MATERIAL", "EQUIPMENT"] as const;
@@ -42,14 +43,18 @@ export async function createAssignmentAction(
     personnelId: resourceType === "PERSONNEL" ? resourceId : undefined,
     materialId: resourceType === "MATERIAL" ? resourceId : undefined,
     equipmentId: resourceType === "EQUIPMENT" ? resourceId : undefined,
-    quantity: quantityRaw ? Number(quantityRaw) : undefined,
+    // Personnel occupy a schedule but consume nothing, so they carry no
+    // quantity - a CHECK constraint in the database enforces that, and
+    // sending a stray value here would be refused.
+    quantity: resourceType === "PERSONNEL" ? undefined : quantityRaw ? Number(quantityRaw) : undefined,
     startAt: new Date(startAtRaw),
     endAt: endAtRaw ? new Date(endAtRaw) : undefined,
     notes: emptyToUndefined(formData.get("notes")),
   };
 
   try {
-    await createAssignment(input);
+    const ctx = await requireAuthContext();
+    await createAssignment(ctx.orgId, input, ctx.userId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -59,7 +64,8 @@ export async function createAssignmentAction(
 
 export async function cancelAssignmentAction(jobId: string, assignmentId: string): Promise<ActionState> {
   try {
-    await cancelAssignment(assignmentId);
+    const ctx = await requireAuthContext();
+    await cancelAssignment(ctx.orgId, assignmentId, ctx.userId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

@@ -1,5 +1,23 @@
 // Prisma schema for the construction dispatching app.
 // See CLAUDE.md for the module boundaries these models correspond to.
+//
+// Three conventions run through this file:
+//
+// 1. MONEY IS `Decimal`, never `Float`. Prices land on purchase orders
+//    that get sent to vendors and paid against, so binary floating point
+//    (where 0.1 + 0.2 != 0.3) is not acceptable. Decimal(14,4) leaves
+//    room for sub-cent unit prices while totals round to 2dp for display.
+//    See modules/shared/money.ts.
+//
+// 2. EVERY TENANT-OWNED ROW CARRIES `orgId`. Repository functions take it
+//    as a required argument, so a query that forgets to scope by tenant
+//    is a compile error rather than a data leak. Uniqueness that used to
+//    be global (job numbers, material SKUs) is now per-org.
+//
+// 3. INVARIANTS THE DB CAN ENFORCE LIVE IN THE DB. Prisma cannot express
+//    CHECK or EXCLUDE constraints, so they are written by hand in the
+//    migrations and listed here in comments. Do not assume this file is
+//    the whole schema - read prisma/migrations for the constraints.
 
 generator client {
   provider = "prisma-client-js"
@@ -23,7 +41,8 @@ enum JobStatus {
 
 model Job {
   id          String    @id @default(cuid())
-  jobNumber   String    @unique
+  orgId       String
+  jobNumber   String
   name        String
   siteAddress String
   status      JobStatus @default(PLANNED)
@@ -31,14 +50,17 @@ model Job {
   endDate     DateTime?
   notes       String?
 
-  assignments      Assignment[]
-  purchaseOrders   PurchaseOrder[]
-  quoteRequests    QuoteRequest[]
+  assignments    Assignment[]
+  purchaseOrders PurchaseOrder[]
+  quoteRequests  QuoteRequest[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([status])
+  // Job numbers are unique within an org, not globally - two companies
+  // using this app both get to have a job "1001".
+  @@unique([orgId, jobNumber])
+  @@index([orgId, status])
 }
 
 // ---------------------------------------------------------------------
@@ -51,13 +73,21 @@ enum AssignmentResourceType {
   EQUIPMENT
 }
 
-// A single assignment links one resource (personnel, material, or
-// equipment) to a job for a time window. Only one of personnelId /
-// materialId / equipmentId should be set, matching resourceType -
-// enforced in application code (see modules/dispatch), not by the DB,
-// since Prisma doesn't support conditional foreign keys directly.
+// Links one resource (personnel, material, or equipment) to a job for a
+// time window. Only one of personnelId / materialId / equipmentId is set,
+// and it must match resourceType.
+//
+// DB-ENFORCED (see the architecture-hardening migration):
+//   - CHECK assignment_exactly_one_resource: exactly one FK is non-null
+//     and it agrees with resourceType.
+//   - EXCLUDE assignment_personnel_no_overlap / assignment_equipment_no_overlap:
+//     no two rows for the same person or machine may have overlapping
+//     [startAt, endAt) windows. That constraint is what actually prevents
+//     double-booking; the check in modules/dispatch exists only to
+//     produce a friendlier error before the constraint fires.
 model Assignment {
   id           String                 @id @default(cuid())
+  orgId        String
   job          Job                    @relation(fields: [jobId], references: [id])
   jobId        String
   resourceType AssignmentResourceType
@@ -71,18 +101,33 @@ model Assignment {
   equipment   Equipment? @relation(fields: [equipmentId], references: [id])
   equipmentId String?
 
-  quantity  Float? // relevant for materials/equipment, null for personnel
-  startAt   DateTime
-  endAt     DateTime?
-  notes     String?
+  quantity Float? // relevant for materials/equipment, null for personnel
+  startAt  DateTime
+  endAt    DateTime?
+  notes    String?
+
+  // Cancelling an assignment sets this rather than deleting the row.
+  // Deleting would sever StockMovement.assignmentId (it is ON DELETE SET
+  // NULL), and a stock ledger whose provenance evaporates on cancellation
+  // cannot answer the question it exists to answer. The overlap
+  // constraints ignore cancelled rows, so cancelling genuinely frees the
+  // slot.
+  cancelledAt DateTime?
+
+  stockMovements StockMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([orgId])
   @@index([jobId])
-  @@index([personnelId])
-  @@index([materialId])
-  @@index([equipmentId])
+  @@index([jobId, cancelledAt])
+  // Composite indexes on (resource, startAt) so the overlap pre-check can
+  // fetch just the assignments near the candidate window instead of a
+  // resource's entire history.
+  @@index([personnelId, startAt])
+  @@index([materialId, startAt])
+  @@index([equipmentId, startAt])
 }
 
 // ---------------------------------------------------------------------
@@ -91,6 +136,7 @@ model Assignment {
 
 model Personnel {
   id             String   @id @default(cuid())
+  orgId          String
   name           String
   role           String
   certifications String[] // e.g. ["OSHA-30", "Crane Operator"]
@@ -100,23 +146,68 @@ model Personnel {
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([orgId])
 }
 
 model Material {
-  id                String   @id @default(cuid())
-  sku               String   @unique
-  name              String
-  unit              String // e.g. "cubic yard", "bag", "linear ft"
-  quantityOnHand    Float    @default(0)
-  reorderThreshold  Float?
+  id    String @id @default(cuid())
+  orgId String
+  sku   String
+  name  String
+  unit  String // e.g. "cubic yard", "bag", "linear ft"
+
+  // Cached rollup of StockMovement.delta, maintained in the same
+  // transaction as every movement insert. The ledger is the source of
+  // truth; this column exists so listing materials does not need an
+  // aggregate per row. modules/inventory/ledger.ts can recompute it.
+  quantityOnHand   Float  @default(0)
+  reorderThreshold Float?
 
   assignments    Assignment[]
-  quotes         Quote[]
+  quoteLineItems QuoteLineItem[]
   quoteRequests  QuoteRequestItem[]
   poLineItems    PurchaseOrderLineItem[]
+  stockMovements StockMovement[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@unique([orgId, sku])
+  @@index([orgId])
+}
+
+// Why stock moved, so "we are 40 bags short" has an answer. Append-only:
+// nothing updates or deletes these rows, cancellations included - a
+// cancelled assignment writes a compensating ASSIGNMENT_CANCELLED row
+// rather than erasing the original.
+enum StockMovementReason {
+  OPENING_BALANCE
+  ASSIGNMENT
+  ASSIGNMENT_CANCELLED
+  ADJUSTMENT
+  RECEIPT
+}
+
+model StockMovement {
+  id         String              @id @default(cuid())
+  orgId      String
+  material   Material            @relation(fields: [materialId], references: [id])
+  materialId String
+  delta      Float // signed: negative consumes stock, positive adds it
+  reason     StockMovementReason
+  note       String?
+
+  // Optional provenance: which assignment caused this movement.
+  assignment   Assignment? @relation(fields: [assignmentId], references: [id], onDelete: SetNull)
+  assignmentId String?
+
+  // Clerk user id of whoever triggered it, for the audit trail.
+  createdBy String?
+  createdAt DateTime @default(now())
+
+  @@index([orgId, materialId, createdAt])
+  @@index([assignmentId])
 }
 
 enum EquipmentStatus {
@@ -128,18 +219,21 @@ enum EquipmentStatus {
 
 model Equipment {
   id       String          @id @default(cuid())
+  orgId    String
   name     String
   type     String
   status   EquipmentStatus @default(AVAILABLE)
   location String?
 
-  assignments   Assignment[]
-  quotes        Quote[]
-  quoteRequests QuoteRequestItem[]
-  poLineItems   PurchaseOrderLineItem[]
+  assignments    Assignment[]
+  quoteLineItems QuoteLineItem[]
+  quoteRequests  QuoteRequestItem[]
+  poLineItems    PurchaseOrderLineItem[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([orgId])
 }
 
 // ---------------------------------------------------------------------
@@ -148,17 +242,20 @@ model Equipment {
 
 model Vendor {
   id         String   @id @default(cuid())
+  orgId      String
   name       String
   email      String
   phone      String?
   categories String[] // e.g. ["concrete", "equipment rental"]
 
-  quoteRequests   QuoteRequest[]
-  quotes          Quote[]
-  purchaseOrders  PurchaseOrder[]
+  quoteRequests  QuoteRequest[]
+  quotes         Quote[]
+  purchaseOrders PurchaseOrder[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@index([orgId])
 }
 
 // ---------------------------------------------------------------------
@@ -174,13 +271,14 @@ enum QuoteRequestStatus {
 }
 
 model QuoteRequest {
-  id     String             @id @default(cuid())
-  job    Job                @relation(fields: [jobId], references: [id])
-  jobId  String
-  vendor Vendor             @relation(fields: [vendorId], references: [id])
+  id       String             @id @default(cuid())
+  orgId    String
+  job      Job                @relation(fields: [jobId], references: [id])
+  jobId    String
+  vendor   Vendor             @relation(fields: [vendorId], references: [id])
   vendorId String
-  status QuoteRequestStatus @default(DRAFT)
-  sentAt DateTime?
+  status   QuoteRequestStatus @default(DRAFT)
+  sentAt   DateTime?
 
   items QuoteRequestItem[]
   quote Quote?
@@ -188,15 +286,18 @@ model QuoteRequest {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([orgId])
   @@index([jobId])
   @@index([vendorId])
 }
 
 // A single line item within a quote request (one material or one
 // piece of equipment being requested).
+//
+// DB-ENFORCED: CHECK quote_request_item_exactly_one_resource.
 model QuoteRequestItem {
-  id             String        @id @default(cuid())
-  quoteRequest   QuoteRequest  @relation(fields: [quoteRequestId], references: [id])
+  id             String       @id @default(cuid())
+  quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id], onDelete: Cascade)
   quoteRequestId String
 
   material   Material? @relation(fields: [materialId], references: [id])
@@ -210,12 +311,46 @@ model QuoteRequestItem {
   @@index([quoteRequestId])
 }
 
+// A vendor's response to a QuoteRequest. The vendor prices EVERY line it
+// was asked about, so the prices live in QuoteLineItem - this model is
+// just the envelope (who, when it expires, default lead time).
+//
+// This model previously held a single materialId/equipmentId/price, which
+// meant a five-item request could only ever record one price, and the UI
+// had to ask the dispatcher which item the number was for. That was a
+// modelling error, not a UI problem.
 model Quote {
   id             String       @id @default(cuid())
+  orgId          String
   quoteRequest   QuoteRequest @relation(fields: [quoteRequestId], references: [id])
   quoteRequestId String       @unique
   vendor         Vendor       @relation(fields: [vendorId], references: [id])
   vendorId       String
+
+  // Header-level default; a line item may override it with its own.
+  leadTimeDays Int?
+  expiresAt    DateTime?
+  notes        String?
+
+  lineItems QuoteLineItem[]
+
+  purchaseOrder PurchaseOrder?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([orgId])
+  @@index([vendorId])
+}
+
+// One priced line of a vendor's quote, matching one line of the request.
+//
+// DB-ENFORCED: CHECK quote_line_item_exactly_one_resource,
+//              CHECK quote_line_item_amounts (quantity > 0, unitPrice >= 0).
+model QuoteLineItem {
+  id      String @id @default(cuid())
+  quote   Quote  @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  quoteId String
 
   material   Material? @relation(fields: [materialId], references: [id])
   materialId String?
@@ -223,16 +358,16 @@ model Quote {
   equipment   Equipment? @relation(fields: [equipmentId], references: [id])
   equipmentId String?
 
-  price      Float
+  quantity  Float
+  unitPrice Decimal @db.Decimal(14, 4)
+
+  // Per-line override of the quote's header lead time, for the common
+  // case where one item on a quote is a special order.
   leadTimeDays Int?
-  expiresAt  DateTime?
 
-  purchaseOrder PurchaseOrder?
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  @@index([vendorId])
+  @@index([quoteId])
+  @@index([materialId])
+  @@index([equipmentId])
 }
 
 enum PurchaseOrderStatus {
@@ -243,17 +378,17 @@ enum PurchaseOrderStatus {
   CANCELLED
 }
 
-// PO numbers are generated from this Postgres sequence, not app-side
-// counting, so concurrent PO creation never collides. See
-// modules/procurement for the generation function.
-model PurchaseOrderSequence {
-  id           Int    @id @default(1)
-  lastPoNumber Int    @default(0)
-}
-
 model PurchaseOrder {
-  id       String              @id @default(cuid())
-  poNumber String              @unique // formatted from PurchaseOrderSequence, e.g. "PO-000123"
+  id    String @id @default(cuid())
+  orgId String
+
+  // Formatted from the `purchase_order_number_seq` Postgres sequence,
+  // e.g. "PO-000123". Globally unique rather than per-org: one shared
+  // series is simpler than a sequence per tenant, and gaps are already
+  // expected. Lookups must still filter by orgId - a PO number alone
+  // must never resolve across a tenant boundary.
+  poNumber String @unique
+
   job      Job                 @relation(fields: [jobId], references: [id])
   jobId    String
   vendor   Vendor              @relation(fields: [vendorId], references: [id])
@@ -270,13 +405,16 @@ model PurchaseOrder {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@index([orgId])
   @@index([jobId])
   @@index([vendorId])
 }
 
+// DB-ENFORCED: CHECK po_line_item_exactly_one_resource,
+//              CHECK po_line_item_amounts (quantity > 0, unitPrice >= 0).
 model PurchaseOrderLineItem {
   id              String        @id @default(cuid())
-  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id], onDelete: Cascade)
   purchaseOrderId String
 
   material   Material? @relation(fields: [materialId], references: [id])
@@ -286,7 +424,7 @@ model PurchaseOrderLineItem {
   equipmentId String?
 
   quantity  Float
-  unitPrice Float
+  unitPrice Decimal @db.Decimal(14, 4)
 
   @@index([purchaseOrderId])
 }

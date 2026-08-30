@@ -5,6 +5,7 @@ import { listAssignmentsForResource } from "@/modules/dispatch/repository";
 import { listJobs } from "@/modules/jobs/repository";
 import DeactivateButton from "./DeactivateButton";
 import styles from "../../detail.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -13,13 +14,14 @@ interface PersonnelDetailPageProps {
 }
 
 export default async function PersonnelDetailPage({ params }: PersonnelDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const personnel = await getPersonnelById(id);
+  const personnel = await getPersonnelById(orgId, id);
   if (!personnel) notFound();
 
   const [assignments, jobs] = await Promise.all([
-    listAssignmentsForResource("PERSONNEL", id),
-    listJobs({ limit: 200 }),
+    listAssignmentsForResource(orgId, "PERSONNEL", id),
+    listJobs(orgId, { limit: 200 }),
   ]);
   const jobsById = new Map(jobs.map((j) => [j.id, j]));
 

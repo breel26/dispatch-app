@@ -13,6 +13,8 @@ import {
   updateEquipment,
 } from "@/modules/inventory/repository";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
+import { requireAuthContext } from "@/modules/shared/currentUser";
+import { assertCan } from "@/modules/shared/authContext";
 
 export interface ActionState {
   error?: string;
@@ -47,7 +49,8 @@ function buildPersonnelInput(formData: FormData) {
 export async function createPersonnelAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   let personnel;
   try {
-    personnel = await createPersonnel(buildPersonnelInput(formData));
+    const ctx = await requireAuthContext();
+    personnel = await createPersonnel(ctx.orgId, buildPersonnelInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -61,7 +64,8 @@ export async function updatePersonnelAction(
   formData: FormData
 ): Promise<ActionState> {
   try {
-    await updatePersonnel(personnelId, buildPersonnelInput(formData));
+    const ctx = await requireAuthContext();
+    await updatePersonnel(ctx.orgId, personnelId, buildPersonnelInput(formData));
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -72,7 +76,8 @@ export async function updatePersonnelAction(
 
 export async function deactivatePersonnelAction(personnelId: string): Promise<ActionState> {
   try {
-    await deactivatePersonnel(personnelId);
+    const ctx = await requireAuthContext();
+    await deactivatePersonnel(ctx.orgId, personnelId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -101,7 +106,8 @@ function buildCreateMaterialInput(formData: FormData) {
 export async function createMaterialAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
   let material;
   try {
-    material = await createMaterial(buildCreateMaterialInput(formData));
+    const ctx = await requireAuthContext();
+    material = await createMaterial(ctx.orgId, buildCreateMaterialInput(formData), ctx.userId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -109,9 +115,11 @@ export async function createMaterialAction(_prevState: ActionState, formData: Fo
   redirect(`/inventory/materials/${material.id}`);
 }
 
-// Deliberately excludes quantityOnHand — quantity changes go through
-// adjustMaterialQuantityAction below so the audit-trail "reason" field
-// can't be bypassed by editing quantity here instead.
+// Deliberately excludes quantityOnHand. Stock is a rollup of the movement
+// ledger, so setting it directly would leave a number nothing explains;
+// changes go through adjustMaterialQuantityAction, which records a reason.
+// updateMaterialSchema no longer accepts the field at all, so this is now
+// enforced by the schema rather than by convention.
 export async function updateMaterialAction(
   materialId: string,
   _prevState: ActionState,
@@ -119,7 +127,8 @@ export async function updateMaterialAction(
 ): Promise<ActionState> {
   const reorderRaw = emptyToUndefined(formData.get("reorderThreshold"));
   try {
-    await updateMaterial(materialId, {
+    const ctx = await requireAuthContext();
+    await updateMaterial(ctx.orgId, materialId, {
       name: formData.get("name")?.toString() ?? "",
       unit: formData.get("unit")?.toString() ?? "",
       reorderThreshold: reorderRaw ? Number(reorderRaw) : undefined,
@@ -143,7 +152,15 @@ export async function adjustMaterialQuantityAction(
     return { error: "delta and reason are required" };
   }
   try {
-    await adjustMaterialQuantity({ materialId, delta: Number(deltaRaw), reason });
+    const ctx = await requireAuthContext();
+    // Adjusting stock by hand overrides what the ledger derived from
+    // assignments and receipts, so it is admin-only.
+    assertCan(ctx, "adjustStock");
+    await adjustMaterialQuantity(
+      ctx.orgId,
+      { materialId, delta: Number(deltaRaw), reason },
+      ctx.userId
+    );
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -165,7 +182,8 @@ export async function createEquipmentAction(_prevState: ActionState, formData: F
   const statusRaw = formData.get("status")?.toString();
   let equipment;
   try {
-    equipment = await createEquipment({
+    const ctx = await requireAuthContext();
+    equipment = await createEquipment(ctx.orgId, {
       name: formData.get("name")?.toString() ?? "",
       type: formData.get("type")?.toString() ?? "",
       // createEquipmentSchema defaults status to AVAILABLE — mirrored
@@ -187,7 +205,8 @@ export async function updateEquipmentAction(
 ): Promise<ActionState> {
   const statusRaw = formData.get("status")?.toString();
   try {
-    await updateEquipment(equipmentId, {
+    const ctx = await requireAuthContext();
+    await updateEquipment(ctx.orgId, equipmentId, {
       name: formData.get("name")?.toString() ?? "",
       type: formData.get("type")?.toString() ?? "",
       status: isEquipmentStatus(statusRaw) ? statusRaw : undefined,

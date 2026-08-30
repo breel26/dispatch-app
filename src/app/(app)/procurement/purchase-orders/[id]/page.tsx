@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { getPurchaseOrderById } from "@/modules/procurement/repository";
-import { listMaterials, listEquipment } from "@/modules/inventory/repository";
+import { formatMoney, lineTotal, sumLineTotals } from "@/modules/shared/money";
 import IssuePOButton from "./IssuePOButton";
 import styles from "../../detail.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -12,21 +13,21 @@ interface PurchaseOrderDetailPageProps {
 }
 
 export default async function PurchaseOrderDetailPage({ params }: PurchaseOrderDetailPageProps) {
+  const { orgId } = await requireAuthContext();
   const { id } = await params;
-  const po = await getPurchaseOrderById(id);
+  const po = await getPurchaseOrderById(orgId, id);
   if (!po) notFound();
 
-  const [materials, equipment] = await Promise.all([listMaterials(), listEquipment()]);
-  const materialsById = new Map(materials.map((m) => [m.id, m]));
-  const equipmentById = new Map(equipment.map((e) => [e.id, e]));
-
+  // The line items arrive with their material/equipment already joined, so
+  // there is no need to load the whole catalogue just to label a few rows.
   function lineItemLabel(item: NonNullable<typeof po>["lineItems"][number]): string {
-    if (item.materialId) return materialsById.get(item.materialId)?.name ?? item.materialId;
-    if (item.equipmentId) return equipmentById.get(item.equipmentId)?.name ?? item.equipmentId;
-    return "—";
+    return item.material?.name ?? item.equipment?.name ?? "—";
   }
 
-  const total = po.lineItems.reduce((sum, item) => sum + item.quantity * item.unitPrice, 0);
+  // Decimal arithmetic, not floats: each line is extended and rounded to
+  // cents, then the lines are summed — the same order an invoice is
+  // totalled in, so this figure matches what the vendor bills.
+  const total = sumLineTotals(po.lineItems);
 
   return (
     <div>
@@ -50,13 +51,13 @@ export default async function PurchaseOrderDetailPage({ params }: PurchaseOrderD
 
       <div className={styles.section}>
         <h2>Line Items</h2>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <table className={styles.dataTable}>
           <thead>
             <tr>
-              <th style={{ textAlign: "left" }}>Item</th>
-              <th style={{ textAlign: "left" }}>Quantity</th>
-              <th style={{ textAlign: "left" }}>Unit Price</th>
-              <th style={{ textAlign: "left" }}>Subtotal</th>
+              <th>Item</th>
+              <th>Quantity</th>
+              <th>Unit Price</th>
+              <th>Subtotal</th>
             </tr>
           </thead>
           <tbody>
@@ -64,13 +65,13 @@ export default async function PurchaseOrderDetailPage({ params }: PurchaseOrderD
               <tr key={item.id}>
                 <td>{lineItemLabel(item)}</td>
                 <td>{item.quantity}</td>
-                <td>${item.unitPrice.toFixed(2)}</td>
-                <td>${(item.quantity * item.unitPrice).toFixed(2)}</td>
+                <td>{formatMoney(item.unitPrice)}</td>
+                <td>{formatMoney(lineTotal(item.quantity, item.unitPrice))}</td>
               </tr>
             ))}
           </tbody>
         </table>
-        <p style={{ marginTop: "0.5rem", fontWeight: 600 }}>Total: ${total.toFixed(2)}</p>
+        <p style={{ marginTop: "0.5rem", fontWeight: 600 }}>Total: {formatMoney(total)}</p>
       </div>
 
       <p className={styles.meta}>

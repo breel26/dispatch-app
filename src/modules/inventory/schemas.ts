@@ -29,10 +29,14 @@ export const createMaterialSchema = z.object({
 });
 export type CreateMaterialInput = z.infer<typeof createMaterialSchema>;
 
+// quantityOnHand is deliberately absent. Stock is a rollup of the
+// StockMovement ledger, so setting it directly would make the number
+// unexplainable - there would be no movement row saying where the change
+// came from. Stock changes go through adjustMaterialQuantity, which
+// records a reason. See modules/inventory/ledger.ts.
 export const updateMaterialSchema = z.object({
   name: z.string().min(1).optional(),
   unit: z.string().min(1).optional(),
-  quantityOnHand: z.number().nonnegative().optional(),
   reorderThreshold: z.number().nonnegative().nullable().optional(),
 });
 export type UpdateMaterialInput = z.infer<typeof updateMaterialSchema>;

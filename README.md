@@ -1,36 +1,90 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Dispatch
 
-## Getting Started
+Construction job dispatching: create jobs, assign personnel, materials and
+equipment, request vendor quotes by email, compare pricing, generate
+purchase orders, and order to the job site.
 
-First, run the development server:
+Built on a "data as code" philosophy — schemas and business rules live in
+versioned code, not spreadsheets or manual database edits.
+
+## Stack
+
+Next.js (App Router, Server Components + Server Actions) · TypeScript ·
+PostgreSQL · Prisma 7 · Clerk (auth) · Resend (vendor email) · Zod ·
+ExcelJS · Vitest
+
+## Getting started
+
+```bash
+npm install
+```
+
+Copy `.env.example` to `.env` and fill in the database, Clerk and Resend
+values.
+
+```bash
+npx prisma migrate deploy && npx prisma generate
+```
+
+No seed step is required — PO numbers come from a Postgres sequence, so a
+freshly migrated database is immediately usable.
 
 ```bash
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Then open http://localhost:3000.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+## Commands
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+| Command | What it does |
+| --- | --- |
+| `npm run dev` | Start the dev server |
+| `npm run build` | Production build |
+| `npm test` | Unit tests — no database needed |
+| `npm run test:integration` | Tests against a real Postgres (DB constraints, PO-number concurrency) |
+| `npm run lint` | Lint |
+| `npm run typecheck` | TypeScript check |
+| `npx prisma migrate dev` | Create and apply a new migration |
+| `npx prisma studio` | Browse the database |
 
-## Learn More
+Run tests, lint and typecheck before calling a change done.
 
-To learn more about Next.js, take a look at the following resources:
+## How it is organised
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+Code is grouped by domain rather than by technical layer, so a new feature
+lands in one module instead of touching every folder:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+```
+src/modules/
+  jobs/         job CRUD, status lifecycle
+  dispatch/     assignment logic, scheduling conflicts
+  vendors/      vendor directory, email
+  procurement/  quote comparison, PO generation
+  inventory/    materials, equipment, stock ledger
+  import-export/ DB <-> JSON <-> Excel
+  shared/       Prisma client, money, auth context, error classification
+src/app/        routes, pages, Server Actions
+prisma/         schema and migrations
+```
 
-## Deploy on Vercel
+Each module owns its own types, business logic and tests.
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+## Conventions worth knowing before you write code
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- **Money is `Decimal`, never `number`.** All price arithmetic goes
+  through `modules/shared/money.ts`. Prices stay strings from the form
+  until Zod converts them.
+- **Every tenant-owned row carries `orgId`**, and every repository
+  function takes it as its first argument — so a query that forgets to
+  scope by tenant does not compile.
+- **`prisma/schema.prisma` is not the whole schema.** CHECK and EXCLUDE
+  constraints that Prisma cannot express live in the migration SQL, and
+  they are what actually prevent double-booking and malformed line items.
+- **Stock changes go through the ledger.** `applyStockDelta` is the only
+  thing that may change `Material.quantityOnHand`.
+- **The UI talks to Server Actions.** There is no REST CRUD layer.
+
+`docs/architecture-hardening.md` explains why each of these is the way it
+is, including the tradeoffs that were accepted. `CLAUDE.md` carries the
+working conventions for the repo.

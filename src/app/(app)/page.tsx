@@ -4,6 +4,7 @@ import { listMaterials } from "@/modules/inventory/repository";
 import { findLowStockMaterials } from "@/modules/inventory/stockLevels";
 import { listQuoteRequests } from "@/modules/procurement/repository";
 import styles from "./page.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 // This reads live DB data on every request — must not be statically
 // prerendered at build time, or these counts would freeze as of the last
@@ -11,10 +12,11 @@ import styles from "./page.module.css";
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
+  const { orgId } = await requireAuthContext();
   const [activeJobs, materials, quoteRequests] = await Promise.all([
-    listJobs({ status: "ACTIVE" }),
-    listMaterials(),
-    listQuoteRequests(),
+    listJobs(orgId, { status: "ACTIVE" }),
+    listMaterials(orgId),
+    listQuoteRequests(orgId),
   ]);
 
   const lowStockCount = findLowStockMaterials(materials).length;

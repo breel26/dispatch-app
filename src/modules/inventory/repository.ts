@@ -1,7 +1,3 @@
-// NOTE ON VERIFICATION: same caveat as jobs/vendors/procurement
-// repository.ts files — not typechecked or tested here, Prisma Client
-// generation is network-blocked in this sandbox.
-
 import { prisma } from "@/modules/shared/prisma";
 import type { Personnel, Material, Equipment } from "@prisma/client";
 import {
@@ -12,93 +8,147 @@ import {
   type CreateMaterialInput, type UpdateMaterialInput, type AdjustMaterialQuantityInput,
   type CreateEquipmentInput, type UpdateEquipmentInput,
 } from "./schemas";
+import { applyStockDelta } from "./ledger";
+
+// orgId is a required first argument on every function - see the note in
+// jobs/repository.ts for why scoping is passed explicitly.
 
 // --- Personnel ---
 
-export async function createPersonnel(input: CreatePersonnelInput): Promise<Personnel> {
+export async function createPersonnel(orgId: string, input: CreatePersonnelInput): Promise<Personnel> {
   const data = createPersonnelSchema.parse(input);
-  return prisma.personnel.create({ data });
+  return prisma.personnel.create({ data: { ...data, orgId } });
 }
 
-export async function listPersonnel(activeOnly = true): Promise<Personnel[]> {
+export async function listPersonnel(orgId: string, activeOnly = true): Promise<Personnel[]> {
   return prisma.personnel.findMany({
-    where: activeOnly ? { isActive: true } : undefined,
+    where: { orgId, ...(activeOnly ? { isActive: true } : {}) },
     orderBy: { name: "asc" },
   });
 }
 
-export async function getPersonnelById(id: string): Promise<Personnel | null> {
-  return prisma.personnel.findUnique({ where: { id } });
+export async function getPersonnelById(orgId: string, id: string): Promise<Personnel | null> {
+  return prisma.personnel.findFirst({ where: { id, orgId } });
 }
 
-export async function updatePersonnel(id: string, input: UpdatePersonnelInput): Promise<Personnel> {
+export async function updatePersonnel(
+  orgId: string,
+  id: string,
+  input: UpdatePersonnelInput
+): Promise<Personnel> {
   const data = updatePersonnelSchema.parse(input);
-  return prisma.personnel.update({ where: { id }, data });
+  return prisma.personnel.update({ where: { id, orgId }, data });
 }
 
-// Soft-delete, matching the Job/cancelJob pattern — a deactivated
-// worker may still be referenced by historical Assignments.
-export async function deactivatePersonnel(id: string): Promise<Personnel> {
-  return prisma.personnel.update({ where: { id }, data: { isActive: false } });
+// Soft-delete, matching the Job/cancelJob pattern - a deactivated worker
+// may still be referenced by historical Assignments.
+export async function deactivatePersonnel(orgId: string, id: string): Promise<Personnel> {
+  return prisma.personnel.update({ where: { id, orgId }, data: { isActive: false } });
 }
 
 // --- Material ---
 
-export async function createMaterial(input: CreateMaterialInput): Promise<Material> {
+// A new material's starting stock is recorded as an OPENING_BALANCE
+// movement rather than just being written to quantityOnHand, so the ledger
+// balances from the material's very first row. See ledger.ts.
+export async function createMaterial(
+  orgId: string,
+  input: CreateMaterialInput,
+  createdBy?: string
+): Promise<Material> {
   const data = createMaterialSchema.parse(input);
-  return prisma.material.create({ data });
+
+  return prisma.$transaction(async (tx) => {
+    const material = await tx.material.create({
+      data: { ...data, orgId, quantityOnHand: 0 },
+    });
+
+    if (data.quantityOnHand === 0) return material;
+
+    return applyStockDelta(tx, {
+      orgId,
+      materialId: material.id,
+      delta: data.quantityOnHand,
+      reason: "OPENING_BALANCE",
+      note: "Starting quantity recorded when the material was created",
+      createdBy,
+    });
+  });
 }
 
-export async function listMaterials(): Promise<Material[]> {
-  return prisma.material.findMany({ orderBy: { name: "asc" } });
+export async function listMaterials(orgId: string): Promise<Material[]> {
+  return prisma.material.findMany({ where: { orgId }, orderBy: { name: "asc" } });
 }
 
-export async function getMaterialBySku(sku: string): Promise<Material | null> {
-  return prisma.material.findUnique({ where: { sku } });
+export async function getMaterialBySku(orgId: string, sku: string): Promise<Material | null> {
+  return prisma.material.findUnique({ where: { orgId_sku: { orgId, sku } } });
 }
 
-export async function getMaterialById(id: string): Promise<Material | null> {
-  return prisma.material.findUnique({ where: { id } });
+export async function getMaterialById(orgId: string, id: string): Promise<Material | null> {
+  return prisma.material.findFirst({ where: { id, orgId } });
 }
 
-export async function updateMaterial(id: string, input: UpdateMaterialInput): Promise<Material> {
+// Note the absence of quantityOnHand: stock is not editable through the
+// generic update path, because that would bypass the ledger and leave the
+// cached rollup unexplainable. Stock changes go through
+// adjustMaterialQuantity. See updateMaterialSchema.
+export async function updateMaterial(
+  orgId: string,
+  id: string,
+  input: UpdateMaterialInput
+): Promise<Material> {
   const data = updateMaterialSchema.parse(input);
-  return prisma.material.update({ where: { id }, data });
+  return prisma.material.update({ where: { id, orgId }, data });
 }
 
-// Applies a signed delta atomically via a DB-level increment, so two
-// concurrent adjustments (e.g. a delivery arriving while a dispatcher
-// assigns material to a job) can't silently clobber each other the way
-// a read-then-write in application code would.
+// Applies a signed delta atomically, recording why in the stock ledger.
+// The `reason` this takes was previously validated and then thrown away -
+// it is now the audit trail it always claimed to be.
 export async function adjustMaterialQuantity(
-  input: AdjustMaterialQuantityInput
+  orgId: string,
+  input: AdjustMaterialQuantityInput,
+  createdBy?: string
 ): Promise<Material> {
   const data = adjustMaterialQuantitySchema.parse(input);
-  return prisma.material.update({
-    where: { id: data.materialId },
-    data: { quantityOnHand: { increment: data.delta } },
+
+  return prisma.$transaction(async (tx) => {
+    return applyStockDelta(tx, {
+      orgId,
+      materialId: data.materialId,
+      delta: data.delta,
+      reason: "ADJUSTMENT",
+      note: data.reason,
+      createdBy,
+    });
   });
 }
 
 // --- Equipment ---
 
-export async function createEquipment(input: CreateEquipmentInput): Promise<Equipment> {
+export async function createEquipment(orgId: string, input: CreateEquipmentInput): Promise<Equipment> {
   const data = createEquipmentSchema.parse(input);
-  return prisma.equipment.create({ data });
+  return prisma.equipment.create({ data: { ...data, orgId } });
 }
 
-export async function listEquipment(status?: Equipment["status"]): Promise<Equipment[]> {
+export async function listEquipment(
+  orgId: string,
+  status?: Equipment["status"]
+): Promise<Equipment[]> {
   return prisma.equipment.findMany({
-    where: status ? { status } : undefined,
+    where: { orgId, ...(status ? { status } : {}) },
     orderBy: { name: "asc" },
   });
 }
 
-export async function getEquipmentById(id: string): Promise<Equipment | null> {
-  return prisma.equipment.findUnique({ where: { id } });
+export async function getEquipmentById(orgId: string, id: string): Promise<Equipment | null> {
+  return prisma.equipment.findFirst({ where: { id, orgId } });
 }
 
-export async function updateEquipment(id: string, input: UpdateEquipmentInput): Promise<Equipment> {
+export async function updateEquipment(
+  orgId: string,
+  id: string,
+  input: UpdateEquipmentInput
+): Promise<Equipment> {
   const data = updateEquipmentSchema.parse(input);
-  return prisma.equipment.update({ where: { id }, data });
+  return prisma.equipment.update({ where: { id, orgId }, data });
 }

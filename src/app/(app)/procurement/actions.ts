@@ -12,10 +12,16 @@ import {
 import { sendQuoteRequest } from "@/modules/procurement/sendQuoteRequest";
 import { normalizePoNumberInput } from "@/modules/procurement/poNumber";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
+import { requireAuthContext } from "@/modules/shared/currentUser";
+import { assertCan } from "@/modules/shared/authContext";
+import { parseMoneyInput } from "@/modules/shared/money";
 
 export interface ActionState {
   error?: string;
 }
+
+// See the note in jobs/actions.ts on why requireAuthContext() goes inside
+// the try block and redirect() stays outside it.
 
 function emptyToUndefined(value: FormDataEntryValue | null): string | undefined {
   if (value === null) return undefined;
@@ -50,6 +56,22 @@ function collectRows(formData: FormData, prefix: string): Map<string, FormDataEn
   });
 }
 
+// Splits an item key ("MATERIAL:abc123") back into the pair of optional
+// ids the schemas expect. Used wherever a form identifies which requested
+// item a row refers to.
+function resourceIdsFromItemKey(itemKey: string): {
+  materialId?: string;
+  equipmentId?: string;
+} {
+  const separator = itemKey.indexOf(":");
+  const type = itemKey.slice(0, separator);
+  const id = itemKey.slice(separator + 1);
+  return {
+    materialId: type === "MATERIAL" ? id : undefined,
+    equipmentId: type === "EQUIPMENT" ? id : undefined,
+  };
+}
+
 // --- Quote Requests ---
 
 export async function createQuoteRequestAction(
@@ -80,7 +102,8 @@ export async function createQuoteRequestAction(
 
   let quoteRequest;
   try {
-    quoteRequest = await createQuoteRequest({ jobId, vendorId, items });
+    const ctx = await requireAuthContext();
+    quoteRequest = await createQuoteRequest(ctx.orgId, { jobId, vendorId, items });
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -96,7 +119,8 @@ export async function createQuoteRequestAction(
 // than silently leaving a request that looks sent but isn't.
 export async function sendQuoteRequestAction(quoteRequestId: string): Promise<ActionState> {
   try {
-    await sendQuoteRequest(quoteRequestId);
+    const ctx = await requireAuthContext();
+    await sendQuoteRequest(ctx.orgId, quoteRequestId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -105,39 +129,76 @@ export async function sendQuoteRequestAction(quoteRequestId: string): Promise<Ac
   return {};
 }
 
-// A QuoteRequest can list several items, but Quote has a single
-// (materialId | equipmentId) — the schema models "the vendor's price for
-// this one item," not a blanket total across the whole request. The form
-// lets the dispatcher pick which item the recorded price is for.
+// Records a vendor's response across every line it priced.
+//
+// The form renders one row per requested item, named by that item's key,
+// so the shape of the quote follows the shape of the request. Leaving a
+// row's price blank means the vendor did not quote that item - a normal
+// outcome worth distinguishing from a price of zero, which is why blank
+// rows are skipped rather than coerced to 0.
 export async function createQuoteAction(
   quoteRequestId: string,
   vendorId: string,
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
-  const priceRaw = formData.get("price")?.toString();
-  const itemKey = formData.get("itemKey")?.toString();
-  if (!priceRaw || !itemKey) {
-    return { error: "price and item are required" };
+  const lineItems: {
+    materialId?: string;
+    equipmentId?: string;
+    quantity: number;
+    unitPrice: string;
+    leadTimeDays?: number;
+  }[] = [];
+
+  for (const [field, value] of formData.entries()) {
+    if (!field.startsWith("unitPrice_")) continue;
+
+    const itemKey = field.slice("unitPrice_".length);
+    const rawPrice = value.toString().trim();
+    if (rawPrice === "") continue; // not quoted by this vendor
+
+    if (parseMoneyInput(rawPrice) === null) {
+      return { error: `"${rawPrice}" is not a valid price` };
+    }
+
+    const quantityRaw = formData.get(`quantity_${itemKey}`)?.toString();
+    const quantity = Number(quantityRaw ?? "0");
+    if (!Number.isFinite(quantity) || quantity <= 0) {
+      return { error: "Each quoted line needs a quantity greater than zero" };
+    }
+
+    const leadTimeRaw = emptyToUndefined(formData.get(`leadTimeDays_${itemKey}`));
+
+    lineItems.push({
+      ...resourceIdsFromItemKey(itemKey),
+      quantity,
+      unitPrice: rawPrice,
+      leadTimeDays: leadTimeRaw ? Number(leadTimeRaw) : undefined,
+    });
   }
-  const [itemType, itemResourceId] = itemKey.split(":");
-  const leadTimeRaw = emptyToUndefined(formData.get("leadTimeDays"));
+
+  if (lineItems.length === 0) {
+    return { error: "Enter a price for at least one item" };
+  }
+
+  const headerLeadTime = emptyToUndefined(formData.get("leadTimeDays"));
   const expiresAtRaw = emptyToUndefined(formData.get("expiresAt"));
 
   try {
-    await recordQuote({
+    const ctx = await requireAuthContext();
+    await recordQuote(ctx.orgId, {
       quoteRequestId,
       vendorId,
-      materialId: itemType === "MATERIAL" ? itemResourceId : undefined,
-      equipmentId: itemType === "EQUIPMENT" ? itemResourceId : undefined,
-      price: Number(priceRaw),
-      leadTimeDays: leadTimeRaw ? Number(leadTimeRaw) : undefined,
+      leadTimeDays: headerLeadTime ? Number(headerLeadTime) : undefined,
       expiresAt: expiresAtRaw ? new Date(expiresAtRaw) : undefined,
+      notes: emptyToUndefined(formData.get("notes")),
+      lineItems,
     });
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
   revalidatePath(`/procurement/quote-requests/${quoteRequestId}`);
+  revalidatePath("/procurement/quote-requests");
   return {};
 }
 
@@ -155,16 +216,32 @@ export async function createPurchaseOrderAction(
   const quoteId = emptyToUndefined(formData.get("quoteId"));
 
   const rows = collectRows(formData, "line");
-  const lineItems = rows.map((row) => {
+  const lineItems: {
+    materialId?: string;
+    equipmentId?: string;
+    quantity: number;
+    unitPrice: string;
+  }[] = [];
+
+  for (const row of rows) {
     const type = row.get("lineType")?.toString();
     const resourceId = row.get("lineResourceId")?.toString();
-    return {
+    const rawPrice = row.get("lineUnitPrice")?.toString()?.trim() ?? "";
+
+    // Prices stay as strings all the way into Zod, which converts them to
+    // Decimal. Routing them through Number() first would reintroduce the
+    // float imprecision the Decimal columns exist to prevent.
+    if (parseMoneyInput(rawPrice) === null) {
+      return { error: `"${rawPrice}" is not a valid unit price` };
+    }
+
+    lineItems.push({
       materialId: type === "MATERIAL" ? resourceId : undefined,
       equipmentId: type === "EQUIPMENT" ? resourceId : undefined,
       quantity: Number(row.get("lineQuantity")?.toString() ?? "0"),
-      unitPrice: Number(row.get("lineUnitPrice")?.toString() ?? "0"),
-    };
-  });
+      unitPrice: rawPrice,
+    });
+  }
 
   if (lineItems.length === 0) {
     return { error: "at least one line item is required" };
@@ -172,7 +249,8 @@ export async function createPurchaseOrderAction(
 
   let po;
   try {
-    po = await createPurchaseOrder({ jobId, vendorId, quoteId, lineItems });
+    const ctx = await requireAuthContext();
+    po = await createPurchaseOrder(ctx.orgId, { jobId, vendorId, quoteId, lineItems });
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -203,7 +281,8 @@ export async function findPurchaseOrderAction(
 
   let purchaseOrder;
   try {
-    purchaseOrder = await getPurchaseOrderByNumber(poNumber);
+    const ctx = await requireAuthContext();
+    purchaseOrder = await getPurchaseOrderByNumber(ctx.orgId, poNumber);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -215,9 +294,13 @@ export async function findPurchaseOrderAction(
   redirect(`/procurement/purchase-orders/${purchaseOrder.id}`);
 }
 
+// Issuing commits the company to spend money with a vendor, so it is
+// admin-only.
 export async function issuePurchaseOrderAction(purchaseOrderId: string): Promise<ActionState> {
   try {
-    await issuePurchaseOrder(purchaseOrderId);
+    const ctx = await requireAuthContext();
+    assertCan(ctx, "issuePurchaseOrder");
+    await issuePurchaseOrder(ctx.orgId, purchaseOrderId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

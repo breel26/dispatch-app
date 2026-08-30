@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { listVendors, findVendorsByCategory } from "@/modules/vendors/repository";
 import styles from "./list.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -9,8 +10,9 @@ interface VendorsPageProps {
 }
 
 export default async function VendorsPage({ searchParams }: VendorsPageProps) {
+  const { orgId } = await requireAuthContext();
   const { category } = await searchParams;
-  const vendors = category ? await findVendorsByCategory(category) : await listVendors();
+  const vendors = category ? await findVendorsByCategory(orgId, category) : await listVendors(orgId);
 
   return (
     <div>

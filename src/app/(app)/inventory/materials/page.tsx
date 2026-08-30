@@ -2,6 +2,7 @@ import Link from "next/link";
 import { listMaterials } from "@/modules/inventory/repository";
 import { checkStockLevel } from "@/modules/inventory/stockLevels";
 import styles from "../list.module.css";
+import { requireAuthContext } from "@/modules/shared/currentUser";
 
 export const dynamic = "force-dynamic";
 
@@ -10,9 +11,10 @@ interface MaterialsPageProps {
 }
 
 export default async function MaterialsPage({ searchParams }: MaterialsPageProps) {
+  const { orgId } = await requireAuthContext();
   const { lowStock } = await searchParams;
   const showLowStockOnly = lowStock === "true";
-  const materials = await listMaterials();
+  const materials = await listMaterials(orgId);
   // checkStockLevel's declared return type only carries StockLevel's
   // fields (not the full Material), so keep the original record
   // alongside it for fields like `unit` that aren't part of StockLevel.
