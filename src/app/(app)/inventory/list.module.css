@@ -1,0 +1,74 @@
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1.5rem;
+}
+
+.newButton {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  background: #171717;
+  color: #fff;
+  text-decoration: none;
+}
+
+.filters {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.filters a {
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--border-color, #ccc);
+  text-decoration: none;
+  color: inherit;
+  font-size: 0.85rem;
+}
+
+.filters a.active {
+  background: #171717;
+  color: #fff;
+  border-color: #171717;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.table th,
+.table td {
+  text-align: left;
+  padding: 0.6rem 0.5rem;
+  border-bottom: 1px solid var(--border-color, #e5e5e5);
+}
+
+.table a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.table a:hover {
+  text-decoration: underline;
+}
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--hover-background, #f0f0f0);
+}
+
+.badgeWarn {
+  background: #fdecea;
+  color: #c0392b;
+}
+
+.empty {
+  color: var(--muted-foreground, #666);
+}

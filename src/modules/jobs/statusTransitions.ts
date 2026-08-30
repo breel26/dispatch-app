@@ -20,6 +20,12 @@ export function isValidJobStatusTransition(
   return ALLOWED_TRANSITIONS[from].includes(to);
 }
 
+// Used by the UI to only ever offer legal next statuses — the server
+// still enforces the rule independently via assertValidJobStatusTransition.
+export function getAllowedNextStatuses(status: JobStatus): JobStatus[] {
+  return ALLOWED_TRANSITIONS[status] ?? [];
+}
+
 export class InvalidJobStatusTransitionError extends Error {
   constructor(from: JobStatus, to: JobStatus) {
     super(`Cannot move a job from ${from} to ${to}`);

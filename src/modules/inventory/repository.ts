@@ -27,6 +27,10 @@ export async function listPersonnel(activeOnly = true): Promise<Personnel[]> {
   });
 }
 
+export async function getPersonnelById(id: string): Promise<Personnel | null> {
+  return prisma.personnel.findUnique({ where: { id } });
+}
+
 export async function updatePersonnel(id: string, input: UpdatePersonnelInput): Promise<Personnel> {
   const data = updatePersonnelSchema.parse(input);
   return prisma.personnel.update({ where: { id }, data });
@@ -51,6 +55,10 @@ export async function listMaterials(): Promise<Material[]> {
 
 export async function getMaterialBySku(sku: string): Promise<Material | null> {
   return prisma.material.findUnique({ where: { sku } });
+}
+
+export async function getMaterialById(id: string): Promise<Material | null> {
+  return prisma.material.findUnique({ where: { id } });
 }
 
 export async function updateMaterial(id: string, input: UpdateMaterialInput): Promise<Material> {
@@ -84,6 +92,10 @@ export async function listEquipment(status?: Equipment["status"]): Promise<Equip
     where: status ? { status } : undefined,
     orderBy: { name: "asc" },
   });
+}
+
+export async function getEquipmentById(id: string): Promise<Equipment | null> {
+  return prisma.equipment.findUnique({ where: { id } });
 }
 
 export async function updateEquipment(id: string, input: UpdateEquipmentInput): Promise<Equipment> {

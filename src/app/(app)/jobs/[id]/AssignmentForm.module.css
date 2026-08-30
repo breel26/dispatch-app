@@ -1,0 +1,47 @@
+.form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.field label {
+  font-size: 0.8rem;
+  font-weight: 600;
+}
+
+.field input,
+.field select {
+  padding: 0.4rem;
+  border: 1px solid var(--border-color, #ccc);
+  border-radius: 4px;
+  font: inherit;
+}
+
+.submit {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: none;
+  background: #171717;
+  color: #fff;
+  cursor: pointer;
+  height: fit-content;
+}
+
+.submit:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  width: 100%;
+  color: #c0392b;
+  font-size: 0.85rem;
+}

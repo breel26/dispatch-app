@@ -1,0 +1,39 @@
+.headerRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  margin-bottom: 0.5rem;
+}
+
+.meta {
+  color: var(--muted-foreground, #666);
+  margin-bottom: 1rem;
+}
+
+.editLink {
+  color: inherit;
+}
+
+.section {
+  margin-top: 2rem;
+}
+
+.deleteButton {
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  border: 1px solid #c0392b;
+  background: #fff;
+  color: #c0392b;
+  cursor: pointer;
+}
+
+.deleteButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.error {
+  color: #c0392b;
+  font-size: 0.85rem;
+  margin-top: 0.5rem;
+}
