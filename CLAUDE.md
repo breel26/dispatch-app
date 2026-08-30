@@ -22,7 +22,11 @@ in versioned code, not ad-hoc spreadsheets or manual DB edits.
   internal multi-user tool. Also provides built-in roles/organizations for
   dispatcher vs. admin permissions.
 - Validation: Zod
-- Import/export: xlsx (SheetJS) for Excel, routed through validated JSON
+- Import/export: ExcelJS (`exceljs`) for Excel, routed through validated
+  JSON. Note: ExcelJS's bundled types pull in an old `@types/node` whose
+  `Buffer` predates the generic `Buffer<T>`, so passing a real Buffer to
+  `workbook.xlsx.load()` needs a narrow cast — see the comment in
+  `src/modules/import-export/excel/importMaterials.ts`.
 
 ## Commands
 Fill in once the project is scaffolded — this file is read at the start of
