@@ -4,11 +4,11 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import {
   createQuoteRequest,
-  markQuoteRequestSent,
   recordQuote,
   createPurchaseOrder,
   issuePurchaseOrder,
 } from "@/modules/procurement/repository";
+import { sendQuoteRequest } from "@/modules/procurement/sendQuoteRequest";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
 
 export interface ActionState {
@@ -87,9 +87,14 @@ export async function createQuoteRequestAction(
   redirect(`/procurement/quote-requests/${quoteRequest.id}`);
 }
 
-export async function markQuoteRequestSentAction(quoteRequestId: string): Promise<ActionState> {
+// Emails the quote request to the vendor, then marks it SENT. This
+// previously only flipped the status without sending anything, so the
+// UI reported "SENT" for requests no vendor ever received. If the send
+// fails the request stays DRAFT and the error is shown inline, rather
+// than silently leaving a request that looks sent but isn't.
+export async function sendQuoteRequestAction(quoteRequestId: string): Promise<ActionState> {
   try {
-    await markQuoteRequestSent(quoteRequestId);
+    await sendQuoteRequest(quoteRequestId);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

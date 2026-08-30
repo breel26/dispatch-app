@@ -17,6 +17,8 @@ const BUSINESS_ERROR_NAMES = new Set([
   "SchedulingConflictError",
   "InsufficientStockError",
   "InvalidJobStatusTransitionError",
+  "EmailNotConfiguredError",
+  "VendorEmailMissingError",
 ]);
 
 export function classifyError(err: unknown): ErrorClassification {
