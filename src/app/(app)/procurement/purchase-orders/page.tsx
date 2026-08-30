@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listPurchaseOrders, listPurchaseOrdersForJob } from "@/modules/procurement/repository";
+import PoLookupForm from "./PoLookupForm";
 import styles from "../list.module.css";
 
 export const dynamic = "force-dynamic";
@@ -23,6 +24,8 @@ export default async function PurchaseOrdersPage({ searchParams }: PurchaseOrder
           New Purchase Order
         </Link>
       </div>
+
+      <PoLookupForm />
 
       {purchaseOrders.length === 0 ? (
         <p className={styles.empty}>No purchase orders found.</p>

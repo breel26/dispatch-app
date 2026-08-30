@@ -187,3 +187,16 @@ export async function getPurchaseOrderById(id: string) {
     include: { lineItems: true, vendor: true, job: true, quote: true },
   });
 }
+
+// Looks a PO up by the number printed on it, rather than its internal
+// cuid — the only identifier a dispatcher holding a paper order or a
+// vendor email actually has. Expects an already-canonical PO number;
+// run human-typed input through normalizePoNumberInput first, since
+// this matches the stored string exactly. Returns null when no PO has
+// that number, so callers can say so rather than 404-ing.
+export async function getPurchaseOrderByNumber(poNumber: string) {
+  return prisma.purchaseOrder.findUnique({
+    where: { poNumber },
+    include: { lineItems: true, vendor: true, job: true, quote: true },
+  });
+}

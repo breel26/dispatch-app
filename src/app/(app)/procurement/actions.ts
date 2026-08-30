@@ -7,8 +7,10 @@ import {
   recordQuote,
   createPurchaseOrder,
   issuePurchaseOrder,
+  getPurchaseOrderByNumber,
 } from "@/modules/procurement/repository";
 import { sendQuoteRequest } from "@/modules/procurement/sendQuoteRequest";
+import { normalizePoNumberInput } from "@/modules/procurement/poNumber";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
 
 export interface ActionState {
@@ -177,6 +179,40 @@ export async function createPurchaseOrderAction(
   revalidatePath("/procurement/purchase-orders");
   revalidatePath(`/jobs/${jobId}`);
   redirect(`/procurement/purchase-orders/${po.id}`);
+}
+
+// Jumps straight to a purchase order given the number printed on it.
+// Three outcomes the dispatcher needs told apart: the input isn't a PO
+// number at all, it is one but no such PO exists, or it resolves — only
+// the last one navigates. The redirect stays outside the try/catch on
+// purpose: Next's redirect() signals by throwing, so catching it here
+// would swallow the navigation and report it as a lookup failure.
+export async function findPurchaseOrderAction(
+  _prevState: ActionState,
+  formData: FormData
+): Promise<ActionState> {
+  const raw = formData.get("poNumber")?.toString() ?? "";
+  if (raw.trim() === "") {
+    return { error: "Enter a PO number" };
+  }
+
+  const poNumber = normalizePoNumberInput(raw);
+  if (!poNumber) {
+    return { error: `"${raw.trim()}" is not a valid PO number (expected e.g. PO-000047 or 47)` };
+  }
+
+  let purchaseOrder;
+  try {
+    purchaseOrder = await getPurchaseOrderByNumber(poNumber);
+  } catch (err) {
+    return { error: toActionErrorMessage(err) };
+  }
+
+  if (!purchaseOrder) {
+    return { error: `No purchase order found with number ${poNumber}` };
+  }
+
+  redirect(`/procurement/purchase-orders/${purchaseOrder.id}`);
 }
 
 export async function issuePurchaseOrderAction(purchaseOrderId: string): Promise<ActionState> {
