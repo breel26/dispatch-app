@@ -71,6 +71,28 @@ export async function markQuoteRequestSent(id: string): Promise<QuoteRequest> {
   });
 }
 
+export async function listQuoteRequestsForJob(jobId: string) {
+  return prisma.quoteRequest.findMany({
+    where: { jobId },
+    include: { items: true, vendor: true, quote: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function listQuoteRequests() {
+  return prisma.quoteRequest.findMany({
+    include: { items: true, vendor: true, quote: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function getQuoteRequestById(id: string) {
+  return prisma.quoteRequest.findUnique({
+    where: { id },
+    include: { items: true, vendor: true, quote: true },
+  });
+}
+
 export async function recordQuote(input: CreateQuoteInput): Promise<Quote> {
   const data = createQuoteSchema.parse(input);
   const quote = await prisma.quote.create({ data });
@@ -141,5 +163,27 @@ export async function issuePurchaseOrder(id: string): Promise<PurchaseOrder> {
   return prisma.purchaseOrder.update({
     where: { id },
     data: { status: "ISSUED", issuedAt: new Date() },
+  });
+}
+
+export async function listPurchaseOrdersForJob(jobId: string) {
+  return prisma.purchaseOrder.findMany({
+    where: { jobId },
+    include: { lineItems: true, vendor: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function listPurchaseOrders() {
+  return prisma.purchaseOrder.findMany({
+    include: { lineItems: true, vendor: true, job: true },
+    orderBy: { createdAt: "desc" },
+  });
+}
+
+export async function getPurchaseOrderById(id: string) {
+  return prisma.purchaseOrder.findUnique({
+    where: { id },
+    include: { lineItems: true, vendor: true, job: true, quote: true },
   });
 }
