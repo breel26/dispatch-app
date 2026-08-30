@@ -23,6 +23,7 @@ enum JobStatus {
 
 model Job {
   id          String    @id @default(cuid())
+  jobNumber   String    @unique
   name        String
   siteAddress String
   status      JobStatus @default(PLANNED)

@@ -54,7 +54,9 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
       <div className={styles.headerRow}>
         <div>
           <h1>{job.name}</h1>
-          <p className={styles.meta}>{job.siteAddress}</p>
+          <p className={styles.meta}>
+            Job #{job.jobNumber} &middot; {job.siteAddress}
+          </p>
         </div>
         <Link href={`/jobs/${job.id}/edit`} className={styles.editLink}>
           Edit

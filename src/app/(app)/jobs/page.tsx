@@ -44,6 +44,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>Job #</th>
               <th>Name</th>
               <th>Site address</th>
               <th>Status</th>
@@ -54,6 +55,7 @@ export default async function JobsPage({ searchParams }: JobsPageProps) {
           <tbody>
             {jobs.map((job) => (
               <tr key={job.id}>
+                <td>{job.jobNumber}</td>
                 <td>
                   <Link href={`/jobs/${job.id}`}>{job.name}</Link>
                 </td>

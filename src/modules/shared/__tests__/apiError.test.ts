@@ -42,6 +42,23 @@ describe("handleApiError", () => {
     expect(response.status).toBe(404);
   });
 
+  it("returns 409 for a Prisma P2003 (foreign key) error", async () => {
+    const err = Object.assign(new Error("fk violation"), { code: "P2003" });
+    const response = handleApiError(err);
+    expect(response.status).toBe(409);
+  });
+
+  it("returns 409 for a Prisma P2002 (unique constraint) error", async () => {
+    const err = Object.assign(new Error("unique violation"), {
+      code: "P2002",
+      meta: { target: ["jobNumber"] },
+    });
+    const response = handleApiError(err);
+    expect(response.status).toBe(409);
+    const body = await response.json();
+    expect(body.error).toBe("A record with this jobNumber already exists");
+  });
+
   it("returns 500 for an unrecognized error", async () => {
     const response = handleApiError(new Error("something unexpected"));
     expect(response.status).toBe(500);

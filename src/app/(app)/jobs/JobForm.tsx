@@ -8,6 +8,7 @@ interface JobFormProps {
   action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   submitLabel: string;
   initialValues?: {
+    jobNumber: string;
     name: string;
     siteAddress: string;
     startDate: Date | null;
@@ -26,6 +27,10 @@ export default function JobForm({ action, submitLabel, initialValues }: JobFormP
 
   return (
     <form action={formAction} className={styles.form}>
+      <div className={styles.field}>
+        <label htmlFor="jobNumber">Job number</label>
+        <input id="jobNumber" name="jobNumber" required defaultValue={initialValues?.jobNumber} />
+      </div>
       <div className={styles.field}>
         <label htmlFor="name">Name</label>
         <input id="name" name="name" required defaultValue={initialValues?.name} />

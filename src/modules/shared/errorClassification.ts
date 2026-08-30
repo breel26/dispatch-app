@@ -38,6 +38,11 @@ export function classifyError(err: unknown): ErrorClassification {
     if (code === "P2003") {
       return { kind: "business", message: "Cannot complete this action: related records exist" };
     }
+    if (code === "P2002") {
+      const target = "meta" in err ? (err as { meta?: { target?: string[] } }).meta?.target : undefined;
+      const field = Array.isArray(target) ? target.join(", ") : "value";
+      return { kind: "business", message: `A record with this ${field} already exists` };
+    }
   }
 
   console.error("Unhandled error:", err);

@@ -28,6 +28,7 @@ function toOptionalDate(value: FormDataEntryValue | null): Date | undefined {
 
 function buildJobInput(formData: FormData) {
   return {
+    jobNumber: formData.get("jobNumber")?.toString() ?? "",
     name: formData.get("name")?.toString() ?? "",
     siteAddress: formData.get("siteAddress")?.toString() ?? "",
     startDate: toOptionalDate(formData.get("startDate")),

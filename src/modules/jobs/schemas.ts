@@ -2,6 +2,7 @@ import { z } from "zod";
 import { JOB_STATUSES } from "./types";
 
 export const createJobSchema = z.object({
+  jobNumber: z.string().min(1, "jobNumber is required"),
   name: z.string().min(1, "name is required"),
   siteAddress: z.string().min(1, "siteAddress is required"),
   startDate: z.coerce.date().optional(),
@@ -15,6 +16,7 @@ export const createJobSchema = z.object({
 export type CreateJobInput = z.infer<typeof createJobSchema>;
 
 export const updateJobSchema = z.object({
+  jobNumber: z.string().min(1).optional(),
   name: z.string().min(1).optional(),
   siteAddress: z.string().min(1).optional(),
   startDate: z.coerce.date().optional(),
