@@ -13,7 +13,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <Link href="/jobs">Jobs</Link>
           <Link href="/inventory">Inventory</Link>
           <Link href="/vendors">Vendors</Link>
+          {/* The two procurement stages get their own tabs: the PO list was
+              previously reachable only by URL or from a job detail page. */}
           <Link href="/procurement/quote-requests">Procurement</Link>
+          <Link href="/procurement/purchase-orders">Purchase Orders</Link>
         </nav>
         <div className={styles.headerRight}>
           <UserButton />
