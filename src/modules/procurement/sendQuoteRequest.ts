@@ -46,6 +46,15 @@ export async function sendQuoteRequest(quoteRequestId: string): Promise<QuoteReq
     throw new EmailNotConfiguredError("DISPATCH_FROM_EMAIL");
   }
 
+  // From and Reply-To are deliberately separate. The From address is
+  // constrained by Resend: it must be on a domain we've verified (SPF +
+  // DKIM records published under it), which rules out a free provider
+  // address like gmail.com. Replies have no such constraint, so vendor
+  // responses can be routed to whatever inbox the team actually reads.
+  // Falls back to the From address when unset, preserving the previous
+  // single-address behaviour.
+  const replyToEmail = process.env.DISPATCH_REPLY_TO_EMAIL || fromEmail;
+
   const quoteRequest = await prisma.quoteRequest.findUniqueOrThrow({
     where: { id: quoteRequestId },
     include: {
@@ -63,14 +72,14 @@ export async function sendQuoteRequest(quoteRequestId: string): Promise<QuoteReq
     vendorName: quoteRequest.vendor.name,
     jobName: quoteRequest.job.name,
     jobSiteAddress: quoteRequest.job.siteAddress,
-    replyToEmail: fromEmail,
+    replyToEmail,
     items: toQuoteRequestEmailItems(quoteRequest.items),
   });
 
   await sendVendorEmail({
     ...email,
     toEmail: quoteRequest.vendor.email,
-    replyToEmail: fromEmail,
+    replyToEmail,
     fromEmail,
   });
 

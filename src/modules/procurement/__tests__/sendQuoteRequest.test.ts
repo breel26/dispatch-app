@@ -39,6 +39,7 @@ describe("sendQuoteRequest", () => {
   afterEach(() => {
     delete process.env.RESEND_API_KEY;
     delete process.env.DISPATCH_FROM_EMAIL;
+    delete process.env.DISPATCH_REPLY_TO_EMAIL;
   });
 
   it("sends the email to the vendor and then marks the request sent", async () => {
@@ -56,6 +57,35 @@ describe("sendQuoteRequest", () => {
     expect(sent.subject).toContain("Riverside Phase 2");
     expect(sent.text).toContain("3000 psi concrete");
     expect(mockMarkQuoteRequestSent).toHaveBeenCalledWith("qr-1");
+  });
+
+  // Reply-To is separate from From because Resend constrains the sender
+  // to a verified domain, while replies can go to any inbox.
+  it("routes replies to DISPATCH_REPLY_TO_EMAIL when it is set", async () => {
+    const { sendQuoteRequest } = await import("../sendQuoteRequest");
+    process.env.DISPATCH_REPLY_TO_EMAIL = "dispatch.app.test@gmail.com";
+    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockSendVendorEmail.mockResolvedValue({ id: "email-1" });
+    mockMarkQuoteRequestSent.mockResolvedValue({ id: "qr-1", status: "SENT" });
+
+    await sendQuoteRequest("qr-1");
+
+    const sent = mockSendVendorEmail.mock.calls[0][0];
+    expect(sent.replyToEmail).toBe("dispatch.app.test@gmail.com");
+    // The sender must stay the verified-domain address, not the reply-to.
+    expect(sent.fromEmail).toBe("dispatch@example.com");
+  });
+
+  it("falls back to the From address for replies when DISPATCH_REPLY_TO_EMAIL is unset", async () => {
+    const { sendQuoteRequest } = await import("../sendQuoteRequest");
+    mockFindUniqueOrThrow.mockResolvedValue(QUOTE_REQUEST);
+    mockSendVendorEmail.mockResolvedValue({ id: "email-1" });
+    mockMarkQuoteRequestSent.mockResolvedValue({ id: "qr-1", status: "SENT" });
+
+    await sendQuoteRequest("qr-1");
+
+    const sent = mockSendVendorEmail.mock.calls[0][0];
+    expect(sent.replyToEmail).toBe("dispatch@example.com");
   });
 
   // This is the regression guard for the original bug: the request was
