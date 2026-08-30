@@ -28,6 +28,7 @@ export default async function QuoteRequestDetailPage({ params }: QuoteRequestDet
   }
 
   const itemOptions = quoteRequest.items.map((item) => ({
+    id: item.id,
     type: item.materialId ? ("MATERIAL" as const) : ("EQUIPMENT" as const),
     resourceId: (item.materialId ?? item.equipmentId)!,
     label: `${itemLabel(item)} (qty ${item.quantity})`,

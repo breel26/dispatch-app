@@ -6,6 +6,7 @@ import type { ActionState } from "../../actions";
 import styles from "../../form.module.css";
 
 interface ItemOption {
+  id: string;
   type: "MATERIAL" | "EQUIPMENT";
   resourceId: string;
   label: string;
@@ -32,7 +33,7 @@ export default function RecordQuoteForm({ quoteRequestId, vendorId, items }: Rec
             Select an item
           </option>
           {items.map((item) => (
-            <option key={`${item.type}:${item.resourceId}`} value={`${item.type}:${item.resourceId}`}>
+            <option key={item.id} value={`${item.type}:${item.resourceId}`}>
               {item.label}
             </option>
           ))}
