@@ -1,0 +1,41 @@
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 1rem;
+  margin-bottom: 2rem;
+}
+
+.statCard {
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 8px;
+  padding: 1.25rem;
+}
+
+.statValue {
+  font-size: 2rem;
+  font-weight: 700;
+  display: block;
+}
+
+.statLabel {
+  color: var(--muted-foreground, #666);
+  font-size: 0.9rem;
+}
+
+.links {
+  display: flex;
+  gap: 1rem;
+  flex-wrap: wrap;
+}
+
+.links a {
+  padding: 0.5rem 1rem;
+  border: 1px solid var(--border-color, #e5e5e5);
+  border-radius: 6px;
+  text-decoration: none;
+  color: inherit;
+}
+
+.links a:hover {
+  background: var(--hover-background, #f5f5f5);
+}

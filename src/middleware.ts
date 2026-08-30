@@ -2,7 +2,7 @@ import { clerkMiddleware, createRouteMatcher } from "@clerk/nextjs/server";
 
 // Internal tool — everything requires auth by default except a health
 // check endpoint (useful for uptime monitoring without needing a token).
-const isPublicRoute = createRouteMatcher(["/api/health"]);
+const isPublicRoute = createRouteMatcher(["/api/health", "/sign-in(.*)", "/sign-up(.*)"]);
 
 export default clerkMiddleware(async (auth, req) => {
   if (!isPublicRoute(req)) {
