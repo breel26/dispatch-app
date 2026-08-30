@@ -36,6 +36,11 @@ every session, so stale commands waste turns.
 - `npm run typecheck` — TypeScript type check
 - `npx prisma migrate dev` — run a new DB migration
 - `npx prisma studio` — open Prisma's local DB browser GUI
+- `npm run prisma:seed` — seed the `PurchaseOrderSequence` row (id: 1,
+  lastPoNumber: 0) that PO-number generation requires. Migrations only
+  create the table, not this row — run this once against any fresh
+  database (including a new dev/preview DB) before creating a purchase
+  order, or `createPurchaseOrder`/`nextPoNumber` will throw P2025.
 
 Note on Prisma 7: the database URL lives in `prisma.config.ts` at the
 project root, NOT in `prisma/schema.prisma`'s datasource block (that
