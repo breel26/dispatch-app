@@ -7,6 +7,8 @@ import { listPersonnel, listMaterials, listEquipment } from "@/modules/inventory
 import { listQuoteRequestsForJob, listPurchaseOrdersForJob } from "@/modules/procurement/repository";
 import type { JobStatus } from "@/modules/jobs/types";
 import JobStatusForm from "./JobStatusForm";
+import AssignmentForm from "./AssignmentForm";
+import CancelAssignmentButton from "./CancelAssignmentButton";
 import styles from "./page.module.css";
 
 export const dynamic = "force-dynamic";
@@ -72,6 +74,14 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
       <div className={styles.section}>
         <h2>Assignments</h2>
+        <AssignmentForm
+          jobId={job.id}
+          personnelOptions={personnel
+            .filter((p) => p.isActive)
+            .map((p) => ({ id: p.id, label: p.name }))}
+          materialOptions={materials.map((m) => ({ id: m.id, label: `${m.name} (${m.sku})` }))}
+          equipmentOptions={equipment.map((e) => ({ id: e.id, label: e.name }))}
+        />
         {assignments.length === 0 ? (
           <p className={styles.empty}>No assignments yet.</p>
         ) : (
@@ -83,6 +93,7 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                 <th>Quantity</th>
                 <th>Start</th>
                 <th>End</th>
+                <th></th>
               </tr>
             </thead>
             <tbody>
@@ -93,6 +104,9 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
                   <td>{a.quantity ?? "—"}</td>
                   <td>{a.startAt.toLocaleString()}</td>
                   <td>{a.endAt ? a.endAt.toLocaleString() : "—"}</td>
+                  <td>
+                    <CancelAssignmentButton jobId={job.id} assignmentId={a.id} />
+                  </td>
                 </tr>
               ))}
             </tbody>
