@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { listPersonnel } from "@/modules/inventory/repository";
+import { craftLabel, classificationLabel } from "@/modules/inventory/craft";
 import styles from "../list.module.css";
 import { requireAuthContext } from "@/modules/shared/currentUser";
 
@@ -40,7 +41,8 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
           <thead>
             <tr>
               <th>Name</th>
-              <th>Role</th>
+              <th>Craft</th>
+              <th>Classification</th>
               <th>Certifications</th>
               <th>Status</th>
             </tr>
@@ -51,7 +53,8 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
                 <td>
                   <Link href={`/inventory/personnel/${p.id}`}>{p.name}</Link>
                 </td>
-                <td>{p.role}</td>
+                <td>{craftLabel(p.craft)}</td>
+                <td>{classificationLabel(p.classification)}</td>
                 <td>{p.certifications.join(", ") || "—"}</td>
                 <td>
                   <span className={styles.badge}>{p.isActive ? "Active" : "Inactive"}</span>

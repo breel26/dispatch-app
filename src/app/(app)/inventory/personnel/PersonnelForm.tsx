@@ -1,6 +1,8 @@
 "use client";
 
 import { useActionState } from "react";
+import { CRAFT_OPTIONS, CLASSIFICATION_OPTIONS } from "@/modules/inventory/craft";
+import type { Craft, Classification } from "@/modules/inventory/craft";
 import type { ActionState } from "../actions";
 import styles from "../form.module.css";
 
@@ -9,7 +11,8 @@ interface PersonnelFormProps {
   submitLabel: string;
   initialValues?: {
     name: string;
-    role: string;
+    craft: Craft;
+    classification: Classification;
     certifications: string[];
     isActive: boolean;
   };
@@ -24,10 +27,45 @@ export default function PersonnelForm({ action, submitLabel, initialValues }: Pe
         <label htmlFor="name">Name</label>
         <input id="name" name="name" required defaultValue={initialValues?.name} />
       </div>
+
+      {/* Both selects start blank on create rather than defaulting to the
+          first trade in the list — a required field that arrives
+          pre-filled gets submitted unread, and everyone silently becomes a
+          carpenter. `required` plus the disabled placeholder makes the
+          browser block submission until one is actually chosen. */}
       <div className={styles.field}>
-        <label htmlFor="role">Role</label>
-        <input id="role" name="role" required defaultValue={initialValues?.role} />
+        <label htmlFor="craft">Craft</label>
+        <select id="craft" name="craft" required defaultValue={initialValues?.craft ?? ""}>
+          <option value="" disabled>
+            Select a craft
+          </option>
+          {CRAFT_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
       </div>
+
+      <div className={styles.field}>
+        <label htmlFor="classification">Classification</label>
+        <select
+          id="classification"
+          name="classification"
+          required
+          defaultValue={initialValues?.classification ?? ""}
+        >
+          <option value="" disabled>
+            Select a classification
+          </option>
+          {CLASSIFICATION_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div className={styles.field}>
         <label htmlFor="certifications">Certifications (comma-separated)</label>
         <input
@@ -37,6 +75,7 @@ export default function PersonnelForm({ action, submitLabel, initialValues }: Pe
           placeholder="OSHA-30, Crane Operator"
         />
       </div>
+
       <div className={styles.checkboxField}>
         <input
           id="isActive"
@@ -46,6 +85,7 @@ export default function PersonnelForm({ action, submitLabel, initialValues }: Pe
         />
         <label htmlFor="isActive">Active</label>
       </div>
+
       {state.error && <p className={styles.error}>{state.error}</p>}
       <button type="submit" className={styles.submit} disabled={isPending}>
         {isPending ? "Saving..." : submitLabel}

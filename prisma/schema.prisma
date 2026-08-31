@@ -134,13 +134,39 @@ model Assignment {
 // inventory module
 // ---------------------------------------------------------------------
 
+// The trades a worker can belong to. Ordered as dispatchers list them
+// rather than alphabetically, and the dropdown renders in this same order.
+//
+// These are enums rather than free text because the field they replace
+// (`role`) proved the point: it accumulated values like "JM Carpenter",
+// where one column carried both the trade and the classification with no
+// way to query either.
+enum Craft {
+  CARPENTER
+  LABORER
+  IRONWORKER
+  OPERATOR
+  ELECTRICIAN
+  PIPE_FITTER
+  PLUMBER
+  MASON
+  PILE_DRIVER
+  TEAMSTER
+}
+
+enum Classification {
+  JOURNEYMAN
+  APPRENTICE
+}
+
 model Personnel {
-  id             String   @id @default(cuid())
+  id             String         @id @default(cuid())
   orgId          String
   name           String
-  role           String
+  craft          Craft
+  classification Classification
   certifications String[] // e.g. ["OSHA-30", "Crane Operator"]
-  isActive       Boolean  @default(true)
+  isActive       Boolean        @default(true)
 
   assignments Assignment[]
 
@@ -148,6 +174,9 @@ model Personnel {
   updatedAt DateTime @updatedAt
 
   @@index([orgId])
+  // Dispatchers pick crew by trade ("who are my available ironworkers"),
+  // so that lookup gets an index rather than a scan.
+  @@index([orgId, craft])
 }
 
 model Material {

@@ -11,6 +11,7 @@ import AssignmentForm from "./AssignmentForm";
 import CancelAssignmentButton from "./CancelAssignmentButton";
 import styles from "./page.module.css";
 import { requireAuthContext } from "@/modules/shared/currentUser";
+import { describeCraft } from "@/modules/inventory/craft";
 
 export const dynamic = "force-dynamic";
 
@@ -82,7 +83,12 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
           jobId={job.id}
           personnelOptions={personnel
             .filter((p) => p.isActive)
-            .map((p) => ({ id: p.id, label: p.name }))}
+            // Crew are picked by trade, so the option says which trade:
+            // "dave eguiza - Carpenter, Journeyman".
+            .map((p) => ({
+              id: p.id,
+              label: `${p.name} - ${describeCraft(p.craft, p.classification)}`,
+            }))}
           materialOptions={materials.map((m) => ({ id: m.id, label: `${m.name} (${m.sku})` }))}
           equipmentOptions={equipment.map((e) => ({ id: e.id, label: e.name }))}
         />

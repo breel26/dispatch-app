@@ -1,10 +1,16 @@
 import { z } from "zod";
+import { CRAFT_VALUES, CLASSIFICATION_VALUES } from "./craft";
 
 // --- Personnel ---
 
+// craft and classification replaced a single free-text `role`, which had
+// been carrying both facts at once ("JM Carpenter"). Building the enums
+// from the same tuples the dropdowns render means a trade can never be
+// selectable in the UI but rejected here.
 export const createPersonnelSchema = z.object({
   name: z.string().min(1, "name is required"),
-  role: z.string().min(1, "role is required"),
+  craft: z.enum(CRAFT_VALUES, { message: "select a craft" }),
+  classification: z.enum(CLASSIFICATION_VALUES, { message: "select a classification" }),
   certifications: z.array(z.string().min(1)).default([]),
   isActive: z.boolean().default(true),
 });
@@ -12,7 +18,10 @@ export type CreatePersonnelInput = z.infer<typeof createPersonnelSchema>;
 
 export const updatePersonnelSchema = z.object({
   name: z.string().min(1).optional(),
-  role: z.string().min(1).optional(),
+  craft: z.enum(CRAFT_VALUES, { message: "select a craft" }).optional(),
+  classification: z
+    .enum(CLASSIFICATION_VALUES, { message: "select a classification" })
+    .optional(),
   certifications: z.array(z.string().min(1)).optional(),
   isActive: z.boolean().optional(),
 });

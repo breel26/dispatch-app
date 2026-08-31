@@ -12,6 +12,8 @@ import {
   createEquipment,
   updateEquipment,
 } from "@/modules/inventory/repository";
+import { isCraft, isClassification } from "@/modules/inventory/craft";
+import type { CreatePersonnelInput } from "@/modules/inventory/schemas";
 import { toActionErrorMessage } from "@/modules/shared/actionError";
 import { requireAuthContext } from "@/modules/shared/currentUser";
 import { assertCan } from "@/modules/shared/authContext";
@@ -37,20 +39,46 @@ function parseCertifications(value: FormDataEntryValue | null): string[] {
 
 // --- Personnel ---
 
-function buildPersonnelInput(formData: FormData) {
+// craft and classification arrive from FormData as untyped strings, so they
+// are narrowed here before reaching the repository. Unlike equipment status
+// below - which falls back to AVAILABLE when unset - an unrecognised value
+// is refused outright: these are required fields, and quietly defaulting
+// someone to the wrong trade is worse than making them pick again.
+type PersonnelInputResult =
+  | { ok: true; value: CreatePersonnelInput }
+  | { ok: false; error: string };
+
+function buildPersonnelInput(formData: FormData): PersonnelInputResult {
+  const craft = formData.get("craft")?.toString() ?? "";
+  if (!isCraft(craft)) {
+    return { ok: false, error: "Select a craft" };
+  }
+
+  const classification = formData.get("classification")?.toString() ?? "";
+  if (!isClassification(classification)) {
+    return { ok: false, error: "Select a classification" };
+  }
+
   return {
-    name: formData.get("name")?.toString() ?? "",
-    role: formData.get("role")?.toString() ?? "",
-    certifications: parseCertifications(formData.get("certifications")),
-    isActive: formData.get("isActive") === "on",
+    ok: true,
+    value: {
+      name: formData.get("name")?.toString() ?? "",
+      craft,
+      classification,
+      certifications: parseCertifications(formData.get("certifications")),
+      isActive: formData.get("isActive") === "on",
+    },
   };
 }
 
 export async function createPersonnelAction(_prevState: ActionState, formData: FormData): Promise<ActionState> {
+  const input = buildPersonnelInput(formData);
+  if (!input.ok) return { error: input.error };
+
   let personnel;
   try {
     const ctx = await requireAuthContext();
-    personnel = await createPersonnel(ctx.orgId, buildPersonnelInput(formData));
+    personnel = await createPersonnel(ctx.orgId, input.value);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }
@@ -63,9 +91,12 @@ export async function updatePersonnelAction(
   _prevState: ActionState,
   formData: FormData
 ): Promise<ActionState> {
+  const input = buildPersonnelInput(formData);
+  if (!input.ok) return { error: input.error };
+
   try {
     const ctx = await requireAuthContext();
-    await updatePersonnel(ctx.orgId, personnelId, buildPersonnelInput(formData));
+    await updatePersonnel(ctx.orgId, personnelId, input.value);
   } catch (err) {
     return { error: toActionErrorMessage(err) };
   }

@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { getPersonnelById } from "@/modules/inventory/repository";
 import { listAssignmentsForResource } from "@/modules/dispatch/repository";
 import { listJobs } from "@/modules/jobs/repository";
+import { describeCraft } from "@/modules/inventory/craft";
 import DeactivateButton from "./DeactivateButton";
 import styles from "../../detail.module.css";
 import { requireAuthContext } from "@/modules/shared/currentUser";
@@ -30,7 +31,9 @@ export default async function PersonnelDetailPage({ params }: PersonnelDetailPag
       <div className={styles.headerRow}>
         <div>
           <h1>{personnel.name}</h1>
-          <p className={styles.meta}>{personnel.role}</p>
+          <p className={styles.meta}>
+            {describeCraft(personnel.craft, personnel.classification)}
+          </p>
         </div>
         <Link href={`/inventory/personnel/${personnel.id}/edit`} className={styles.editLink}>
           Edit
