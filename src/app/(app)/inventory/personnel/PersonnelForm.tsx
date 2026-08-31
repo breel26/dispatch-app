@@ -10,6 +10,7 @@ interface PersonnelFormProps {
   action: (prevState: ActionState, formData: FormData) => Promise<ActionState>;
   submitLabel: string;
   initialValues?: {
+    employeeId: string;
     name: string;
     craft: Craft;
     classification: Classification;
@@ -23,6 +24,25 @@ export default function PersonnelForm({ action, submitLabel, initialValues }: Pe
 
   return (
     <form action={formAction} className={styles.form}>
+      {/* Typed as a plain number and padded on save, so a dispatcher can
+          enter "7" without counting zeros. inputMode="numeric" brings up
+          the number pad on a phone without a spinner rejecting the leading
+          zeros of an id pasted in full. */}
+      <div className={styles.field}>
+        <label htmlFor="employeeId">Employee ID</label>
+        <input
+          id="employeeId"
+          name="employeeId"
+          required
+          inputMode="numeric"
+          placeholder="000001"
+          defaultValue={initialValues?.employeeId}
+        />
+        <p className={styles.hint}>
+          Numbers only. Saved padded to at least six digits, so 7 becomes 000007.
+        </p>
+      </div>
+
       <div className={styles.field}>
         <label htmlFor="name">Name</label>
         <input id="name" name="name" required defaultValue={initialValues?.name} />

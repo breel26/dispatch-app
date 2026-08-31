@@ -15,8 +15,41 @@ import { applyStockDelta } from "./ledger";
 
 // --- Personnel ---
 
+// Raised instead of letting the unique index produce a bare constraint
+// error, so the dispatcher is told who already holds the number rather
+// than just "that value is taken". Mirrors DuplicateJobNumberError in
+// modules/jobs/repository.ts.
+export class DuplicateEmployeeIdError extends Error {
+  constructor(employeeId: string, existingName: string) {
+    super(`Employee id ${employeeId} is already used by "${existingName}"`);
+    this.name = "DuplicateEmployeeIdError";
+  }
+}
+
+// The check runs against the NORMALIZED id from the parsed data, not the
+// raw input - otherwise typing "1" would sail past a check for "000001"
+// and only fail later at the index.
+//
+// The unique index remains the guarantee; this pre-check exists to name
+// the conflict. A concurrent insert that slips past it still hits the
+// index and classifies as "a record with this employeeId already exists".
+async function assertEmployeeIdAvailable(
+  orgId: string,
+  employeeId: string,
+  excludePersonnelId?: string
+): Promise<void> {
+  const existing = await prisma.personnel.findUnique({
+    where: { orgId_employeeId: { orgId, employeeId } },
+    select: { id: true, name: true },
+  });
+  if (existing && existing.id !== excludePersonnelId) {
+    throw new DuplicateEmployeeIdError(employeeId, existing.name);
+  }
+}
+
 export async function createPersonnel(orgId: string, input: CreatePersonnelInput): Promise<Personnel> {
   const data = createPersonnelSchema.parse(input);
+  await assertEmployeeIdAvailable(orgId, data.employeeId);
   return prisma.personnel.create({ data: { ...data, orgId } });
 }
 
@@ -37,6 +70,11 @@ export async function updatePersonnel(
   input: UpdatePersonnelInput
 ): Promise<Personnel> {
   const data = updatePersonnelSchema.parse(input);
+  if (data.employeeId !== undefined) {
+    // Excludes this worker, so re-saving the edit form without changing
+    // the number does not report a clash with themselves.
+    await assertEmployeeIdAvailable(orgId, data.employeeId, id);
+  }
   return prisma.personnel.update({ where: { id, orgId }, data });
 }
 

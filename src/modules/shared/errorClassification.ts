@@ -21,6 +21,7 @@ const BUSINESS_ERROR_NAMES = new Set([
   "VendorEmailMissingError",
   "QuoteItemMismatchError",
   "DuplicateJobNumberError",
+  "DuplicateEmployeeIdError",
 ]);
 
 // Postgres SQLSTATE codes for the constraints added in the

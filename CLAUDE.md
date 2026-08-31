@@ -75,13 +75,17 @@ alone.)
 
 ## Core entities
 - **Job** — site, status, timeline, requirements
-- **Personnel** — workers, craft (trade), classification (journeyman or
-  apprentice), certifications, availability. Craft and classification are
-  Postgres enums, both required; they replaced a free-text `role` field
-  that had been carrying both facts at once ("JM Carpenter"). The values
-  and their display labels live in `modules/inventory/craft.ts`, which is
-  the single source for both the Zod enums and the dropdowns — add a trade
-  there and nowhere else.
+- **Personnel** — workers, employee id, craft (trade), classification
+  (journeyman or apprentice), certifications, availability. Craft and
+  classification are Postgres enums, both required; they replaced a
+  free-text `role` field that had been carrying both facts at once
+  ("JM Carpenter"). The values and their display labels live in
+  `modules/inventory/craft.ts`, which is the single source for both the
+  Zod enums and the dropdowns — add a trade there and nowhere else.
+  `employeeId` is dispatcher-supplied and unique per org, stored
+  zero-padded to at least six digits; `modules/inventory/employeeId.ts`
+  normalizes input the way `poNumber.ts` does for POs, so "1" and "000001"
+  can never become two different workers.
 - **Material** — SKU, unit, quantity on hand, current sourcing
 - **Equipment** — type, availability, current location/assignment
 - **Vendor** — contact info, email, categories supplied, price history

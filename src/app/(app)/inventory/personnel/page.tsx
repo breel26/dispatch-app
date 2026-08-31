@@ -40,6 +40,7 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>Employee ID</th>
               <th>Name</th>
               <th>Craft</th>
               <th>Classification</th>
@@ -50,6 +51,7 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
           <tbody>
             {personnel.map((p) => (
               <tr key={p.id}>
+                <td>{p.employeeId}</td>
                 <td>
                   <Link href={`/inventory/personnel/${p.id}`}>{p.name}</Link>
                 </td>

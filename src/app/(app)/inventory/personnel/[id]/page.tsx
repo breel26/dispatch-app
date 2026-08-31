@@ -32,6 +32,7 @@ export default async function PersonnelDetailPage({ params }: PersonnelDetailPag
         <div>
           <h1>{personnel.name}</h1>
           <p className={styles.meta}>
+            #{personnel.employeeId} ·{" "}
             {describeCraft(personnel.craft, personnel.classification)}
           </p>
         </div>

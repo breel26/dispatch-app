@@ -160,8 +160,19 @@ enum Classification {
 }
 
 model Personnel {
-  id             String         @id @default(cuid())
-  orgId          String
+  id    String @id @default(cuid())
+  orgId String
+
+  // The number the worker is known by on paperwork and payroll. Stored
+  // zero-padded to at least six digits ("000001"), the same canonical-form
+  // treatment PO numbers get - see modules/inventory/employeeId.ts, which
+  // normalizes what someone types into what gets stored, so "1" and
+  // "000001" cannot become two different workers.
+  //
+  // Dispatcher-supplied rather than generated, for the same reason job
+  // numbers are: it has to match a payroll system this app does not own.
+  employeeId String
+
   name           String
   craft          Craft
   classification Classification
@@ -173,6 +184,9 @@ model Personnel {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Unique within an org, not globally - two companies using this app both
+  // get to have an employee 000001.
+  @@unique([orgId, employeeId])
   @@index([orgId])
   // Dispatchers pick crew by trade ("who are my available ironworkers"),
   // so that lookup gets an index rather than a scan.

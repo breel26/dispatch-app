@@ -1,13 +1,31 @@
 import { z } from "zod";
 import { CRAFT_VALUES, CLASSIFICATION_VALUES } from "./craft";
+import { normalizeEmployeeIdInput } from "./employeeId";
 
 // --- Personnel ---
+
+// Employee numbers are normalized here rather than at the call site, so
+// every write path stores the canonical padded form and "1" can never be
+// filed as a different worker from "000001". Rejects anything that is not
+// an employee number instead of coercing it.
+const employeeIdSchema = z.string().transform((value, ctx): string => {
+  const normalized = normalizeEmployeeIdInput(value);
+  if (normalized === null) {
+    ctx.addIssue({
+      code: "custom",
+      message: "employee id must be a number, e.g. 000001",
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
 
 // craft and classification replaced a single free-text `role`, which had
 // been carrying both facts at once ("JM Carpenter"). Building the enums
 // from the same tuples the dropdowns render means a trade can never be
 // selectable in the UI but rejected here.
 export const createPersonnelSchema = z.object({
+  employeeId: employeeIdSchema,
   name: z.string().min(1, "name is required"),
   craft: z.enum(CRAFT_VALUES, { message: "select a craft" }),
   classification: z.enum(CLASSIFICATION_VALUES, { message: "select a classification" }),
@@ -17,6 +35,7 @@ export const createPersonnelSchema = z.object({
 export type CreatePersonnelInput = z.infer<typeof createPersonnelSchema>;
 
 export const updatePersonnelSchema = z.object({
+  employeeId: employeeIdSchema.optional(),
   name: z.string().min(1).optional(),
   craft: z.enum(CRAFT_VALUES, { message: "select a craft" }).optional(),
   classification: z

@@ -16,6 +16,15 @@
   font-weight: 600;
 }
 
+/* Explains a field's convention beneath its input — used by Employee ID to
+   say that a short number gets padded on save. */
+.hint {
+  margin: 0;
+  font-size: 0.8rem;
+  color: #57606a;
+  line-height: 1.4;
+}
+
 .field input,
 .field select,
 .field textarea {

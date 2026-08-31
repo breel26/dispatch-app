@@ -35,7 +35,13 @@ describe("assignment overlap constraints (integration)", () => {
     jobId = job.id;
 
     const person = await prisma.personnel.create({
-      data: { orgId: ORG, name: "Test Operator", craft: "OPERATOR", classification: "JOURNEYMAN" },
+      data: {
+        orgId: ORG,
+        employeeId: "900001",
+        name: "Test Operator",
+        craft: "OPERATOR",
+        classification: "JOURNEYMAN",
+      },
     });
     personnelId = person.id;
 
@@ -194,7 +200,13 @@ describe("assignment overlap constraints (integration)", () => {
 
   it("does not stop two different people working the same window", async () => {
     const other = await prisma.personnel.create({
-      data: { orgId: ORG, name: "Second Operator", craft: "OPERATOR", classification: "JOURNEYMAN" },
+      data: {
+        orgId: ORG,
+        employeeId: "900002",
+        name: "Second Operator",
+        craft: "OPERATOR",
+        classification: "JOURNEYMAN",
+      },
     });
 
     await createAssignment(ORG, {

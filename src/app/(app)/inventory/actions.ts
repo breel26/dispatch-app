@@ -62,6 +62,9 @@ function buildPersonnelInput(formData: FormData): PersonnelInputResult {
   return {
     ok: true,
     value: {
+      // Passed through raw: createPersonnelSchema normalizes it to the
+      // padded stored form, so "1" and "000001" cannot become two workers.
+      employeeId: formData.get("employeeId")?.toString() ?? "",
       name: formData.get("name")?.toString() ?? "",
       craft,
       classification,
