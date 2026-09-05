@@ -27,9 +27,12 @@ export default async function MaterialsPage({ searchParams }: MaterialsPageProps
     <div>
       <div className={styles.headerRow}>
         <h1>Materials</h1>
-        <Link href="/inventory/materials/new" className={styles.newButton}>
-          New Material
-        </Link>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Link href="/inventory/materials/import">Import from Excel</Link>
+          <Link href="/inventory/materials/new" className={styles.newButton}>
+            New Material
+          </Link>
+        </div>
       </div>
 
       <div className={styles.filters}>

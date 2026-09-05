@@ -144,7 +144,18 @@ touching unrelated modules:
 - `procurement` — quote comparison, PO generation, ordering
 - `inventory` — materials/equipment tracking, availability
 - `import-export` — shared DB ↔ JSON ↔ (Excel/CSV/etc.) conversion, used
-  by any module that needs it
+  by any module that needs it. Personnel and Equipment reuse
+  `createPersonnelSchema`/`createEquipmentSchema` directly for row
+  validation rather than a second parallel schema (unlike Material's
+  independent one) — those two have real regex rules (SSN, phone, the
+  equipment number format) not worth risking a drift between two copies.
+  Import is wired to the database via Server Actions in
+  `src/app/(app)/inventory/importActions.ts`, which upsert by the natural
+  key (SKU / employeeId / equipmentNumber) rather than always creating —
+  the parsing/validation modules themselves never touch the database.
+  Personnel export never includes SSN or driver's license number, and
+  import writes them through the same `createPersonnel`/`updatePersonnel`
+  path as the manual form, so they are encrypted the same way.
 - `shared` — Prisma client, money, auth context, error classification
 
 Each module owns its own types, business logic, and tests. Cross-module

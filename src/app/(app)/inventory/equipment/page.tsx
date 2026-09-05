@@ -29,9 +29,12 @@ export default async function EquipmentPage({ searchParams }: EquipmentPageProps
     <div>
       <div className={styles.headerRow}>
         <h1>Equipment</h1>
-        <Link href="/inventory/equipment/new" className={styles.newButton}>
-          New Equipment
-        </Link>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Link href="/inventory/equipment/import">Import from Excel</Link>
+          <Link href="/inventory/equipment/new" className={styles.newButton}>
+            New Equipment
+          </Link>
+        </div>
       </div>
 
       <div className={styles.filters}>

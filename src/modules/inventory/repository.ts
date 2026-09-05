@@ -84,6 +84,16 @@ export async function getPersonnelById(orgId: string, id: string): Promise<Perso
   return prisma.personnel.findFirst({ where: { id, orgId } });
 }
 
+// Used by the Excel importer to decide whether an imported row is a new
+// worker or an update to an existing one, the same role
+// getMaterialBySku plays for materials.
+export async function getPersonnelByEmployeeId(
+  orgId: string,
+  employeeId: string
+): Promise<Personnel | null> {
+  return prisma.personnel.findUnique({ where: { orgId_employeeId: { orgId, employeeId } } });
+}
+
 export async function updatePersonnel(
   orgId: string,
   id: string,
@@ -239,6 +249,15 @@ export async function listEquipment(
 
 export async function getEquipmentById(orgId: string, id: string): Promise<Equipment | null> {
   return prisma.equipment.findFirst({ where: { id, orgId } });
+}
+
+// Used by the Excel importer to decide whether an imported row is a new
+// piece of equipment or an update to an existing one.
+export async function getEquipmentByNumber(
+  orgId: string,
+  equipmentNumber: string
+): Promise<Equipment | null> {
+  return prisma.equipment.findUnique({ where: { orgId_equipmentNumber: { orgId, equipmentNumber } } });
 }
 
 export async function updateEquipment(

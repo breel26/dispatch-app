@@ -20,9 +20,12 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
     <div>
       <div className={styles.headerRow}>
         <h1>Personnel</h1>
-        <Link href="/inventory/personnel/new" className={styles.newButton}>
-          New Personnel
-        </Link>
+        <div style={{ display: "flex", gap: "0.75rem" }}>
+          <Link href="/inventory/personnel/import">Import from Excel</Link>
+          <Link href="/inventory/personnel/new" className={styles.newButton}>
+            New Personnel
+          </Link>
+        </div>
       </div>
 
       <div className={styles.filters}>
