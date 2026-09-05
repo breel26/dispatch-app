@@ -47,6 +47,14 @@ jobs:
       - name: Generate Prisma client
         run: npx prisma generate
 
+      # Next generates route/layout types (LayoutProps, PageProps) into
+      # .next/types, which is gitignored — so a fresh clone has no such
+      # types and `tsc` fails on app/layout.tsx. Locally this is invisible
+      # because `next dev` keeps them regenerated. typegen produces them
+      # without paying for a full build.
+      - name: Generate Next route types
+        run: npx next typegen
+
       - name: Typecheck
         run: npm run typecheck
 
