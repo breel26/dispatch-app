@@ -38,7 +38,15 @@ describe("assignment overlap constraints (integration)", () => {
       data: {
         orgId: ORG,
         employeeId: "900001",
-        name: "Test Operator",
+        firstName: "Test",
+        lastName: "Operator",
+        dateOfBirth: new Date("1990-01-01"),
+        hireDate: new Date("2020-01-01"),
+        homeStreet1: "1 Test Way",
+        homeCity: "Testville",
+        homeState: "CA",
+        homePostalCode: "90001",
+        phoneNumber: "(555) 000-0001",
         craft: "OPERATOR",
         classification: "JOURNEYMAN",
       },
@@ -46,7 +54,14 @@ describe("assignment overlap constraints (integration)", () => {
     personnelId = person.id;
 
     const machine = await prisma.equipment.create({
-      data: { orgId: ORG, name: "Test Excavator", type: "Excavator" },
+      data: {
+        orgId: ORG,
+        equipmentNumber: "03-07-9001",
+        name: "Test Excavator",
+        type: "Excavator",
+        make: "Caterpillar",
+        model: "336",
+      },
     });
     equipmentId = machine.id;
   });
@@ -203,7 +218,15 @@ describe("assignment overlap constraints (integration)", () => {
       data: {
         orgId: ORG,
         employeeId: "900002",
-        name: "Second Operator",
+        firstName: "Second",
+        lastName: "Operator",
+        dateOfBirth: new Date("1990-01-01"),
+        hireDate: new Date("2020-01-01"),
+        homeStreet1: "1 Test Way",
+        homeCity: "Testville",
+        homeState: "CA",
+        homePostalCode: "90001",
+        phoneNumber: "(555) 000-0002",
         craft: "OPERATOR",
         classification: "JOURNEYMAN",
       },

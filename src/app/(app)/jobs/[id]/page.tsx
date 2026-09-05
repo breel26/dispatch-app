@@ -41,13 +41,15 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
 
   function resourceLabel(a: (typeof assignments)[number]): string {
     if (a.resourceType === "PERSONNEL" && a.personnelId) {
-      return personnelById.get(a.personnelId)?.name ?? a.personnelId;
+      const person = personnelById.get(a.personnelId);
+      return person ? `${person.firstName} ${person.lastName}` : a.personnelId;
     }
     if (a.resourceType === "MATERIAL" && a.materialId) {
       return materialsById.get(a.materialId)?.name ?? a.materialId;
     }
     if (a.resourceType === "EQUIPMENT" && a.equipmentId) {
-      return equipmentById.get(a.equipmentId)?.name ?? a.equipmentId;
+      const item = equipmentById.get(a.equipmentId);
+      return item ? `${item.name} - ${item.type}` : a.equipmentId;
     }
     return "—";
   }
@@ -87,10 +89,19 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
             // "dave eguiza - Carpenter, Journeyman".
             .map((p) => ({
               id: p.id,
-              label: `${p.name} - ${describeCraft(p.craft, p.classification)}`,
+              label: `${p.firstName} ${p.lastName} - ${describeCraft(p.craft, p.classification)}`,
             }))}
           materialOptions={materials.map((m) => ({ id: m.id, label: `${m.name} (${m.sku})` }))}
-          equipmentOptions={equipment.map((e) => ({ id: e.id, label: e.name }))}
+          // Equipment is picked in two steps - who owns it (the company
+          // itself, or which rental vendor) and then what kind of machine -
+          // so `owner` and `type` are carried alongside the flat label,
+          // rather than only handing the form one pre-joined string.
+          equipmentOptions={equipment.map((e) => ({
+            id: e.id,
+            label: `${e.name} - ${e.type}`,
+            owner: e.name,
+            type: e.type,
+          }))}
         />
         {assignments.length === 0 ? (
           <p className={styles.empty}>No assignments yet.</p>

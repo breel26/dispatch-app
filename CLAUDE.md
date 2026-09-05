@@ -76,18 +76,47 @@ alone.)
 ## Core entities
 - **Job** — site, status, timeline, requirements
 - **Personnel** — workers, employee id, craft (trade), classification
-  (journeyman or apprentice), certifications, availability. Craft and
-  classification are Postgres enums, both required; they replaced a
-  free-text `role` field that had been carrying both facts at once
-  ("JM Carpenter"). The values and their display labels live in
+  (apprentice/journeyman/foreman/superintendent), certifications,
+  availability, plus HR fields: legal name (first/middle/last), date of
+  birth, hire date, SSN, driver's license number, home address, phone.
+  Craft and classification are Postgres enums, both required; they
+  replaced a free-text `role` field that had been carrying both facts at
+  once ("JM Carpenter"). The values and their display labels live in
   `modules/inventory/craft.ts`, which is the single source for both the
   Zod enums and the dropdowns — add a trade there and nowhere else.
   `employeeId` is dispatcher-supplied and unique per org, stored
   zero-padded to at least six digits; `modules/inventory/employeeId.ts`
   normalizes input the way `poNumber.ts` does for POs, so "1" and "000001"
   can never become two different workers.
+
+  **SSN and driver's license number are encrypted application-side**
+  (AES-256-GCM, `modules/shared/pii.ts`), never stored or logged in plain
+  text. `PII_ENCRYPTION_KEY` (32-byte, base64) must be set — generate one
+  per environment with `openssl rand -base64 32`, never reuse across
+  dev/staging/prod, never commit a real value. Both columns are nullable
+  at the database level even though `createPersonnelSchema` requires them
+  for new personnel: an encrypted value can only be produced by application
+  code holding a real key, so a NOT NULL backfill for pre-existing rows is
+  not something a portable migration file can do safely — see the note on
+  `Personnel.ssnEncrypted` in `schema.prisma`. Neither the full SSN nor the
+  full license number is ever rendered in a page or passed as a prop to a
+  Client Component — the personnel detail page decrypts server-side only
+  long enough to compute a masked "ending in 1234" string, and the edit
+  form never prefills either field (write-only, like a password input).
 - **Material** — SKU, unit, quantity on hand, current sourcing
-- **Equipment** — type, availability, current location/assignment
+- **Equipment** — fleet number (`XX-XX-XXXX`: type code, weight/capacity
+  code, sequence unique within that type+capacity pair), name (who owns
+  it — "Company Owned" or a rental vendor), type (free-text description),
+  make, model, operating hours, required certifications, status,
+  location. The fleet number's type and capacity registries live in
+  `modules/inventory/equipmentNumber.ts` as plain validated lists, not a
+  Postgres enum — the taxonomy is expected to grow, so adding a category
+  is a one-line change there, never a migration. `operatingHours` is
+  nullable: equipment already in service when the column was added has
+  unknown, not zero, hours, and defaulting to 0 would misreport it as
+  unused; newly created equipment gets a real 0 from
+  `createEquipmentSchema`'s default, since that one actually is true for
+  something brand new.
 - **Vendor** — contact info, email, categories supplied, price history
 - **QuoteRequest** — vendor, item(s), sent date, status
 - **Quote** — a vendor's response to one request: the envelope (expiry,

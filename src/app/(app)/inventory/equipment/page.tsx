@@ -55,8 +55,10 @@ export default async function EquipmentPage({ searchParams }: EquipmentPageProps
         <table className={styles.table}>
           <thead>
             <tr>
+              <th>Fleet #</th>
               <th>Name</th>
               <th>Type</th>
+              <th>Make / Model</th>
               <th>Status</th>
               <th>Location</th>
             </tr>
@@ -64,10 +66,14 @@ export default async function EquipmentPage({ searchParams }: EquipmentPageProps
           <tbody>
             {equipment.map((e) => (
               <tr key={e.id}>
+                <td>{e.equipmentNumber}</td>
                 <td>
                   <Link href={`/inventory/equipment/${e.id}`}>{e.name}</Link>
                 </td>
                 <td>{e.type}</td>
+                <td>
+                  {e.make} {e.model}
+                </td>
                 <td>
                   <span className={styles.badge}>{e.status}</span>
                 </td>

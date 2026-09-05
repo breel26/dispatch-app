@@ -29,7 +29,9 @@ export default async function EquipmentDetailPage({ params }: EquipmentDetailPag
       <div className={styles.headerRow}>
         <div>
           <h1>{equipment.name}</h1>
-          <p className={styles.meta}>{equipment.type}</p>
+          <p className={styles.meta}>
+            #{equipment.equipmentNumber} · {equipment.type}
+          </p>
         </div>
         <Link href={`/inventory/equipment/${equipment.id}/edit`} className={styles.editLink}>
           Edit
@@ -39,6 +41,18 @@ export default async function EquipmentDetailPage({ params }: EquipmentDetailPag
       <p>
         Status: <span className={styles.badge}>{equipment.status}</span>
       </p>
+      <p className={styles.meta}>
+        {equipment.make} {equipment.model}
+      </p>
+      <p className={styles.meta}>
+        Operating hours:{" "}
+        {equipment.operatingHours != null ? equipment.operatingHours : "Not recorded"}
+      </p>
+      {equipment.requiredCertifications.length > 0 && (
+        <p className={styles.meta}>
+          Required certifications: {equipment.requiredCertifications.join(", ")}
+        </p>
+      )}
       {equipment.location && <p className={styles.meta}>Location: {equipment.location}</p>}
 
       <div className={styles.section}>

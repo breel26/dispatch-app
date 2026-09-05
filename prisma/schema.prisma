@@ -154,9 +154,15 @@ enum Craft {
   TEAMSTER
 }
 
+// Foreman and Superintendent were added alongside Journeyman/Apprentice
+// after confirming these are real job-site distinctions the company
+// tracks, not just a trade-classification pair. Existing workers keep
+// whichever of the original two values they already had.
 enum Classification {
-  JOURNEYMAN
   APPRENTICE
+  JOURNEYMAN
+  FOREMAN
+  SUPERINTENDENT
 }
 
 model Personnel {
@@ -173,7 +179,44 @@ model Personnel {
   // numbers are: it has to match a payroll system this app does not own.
   employeeId String
 
-  name           String
+  // Split rather than a single `name`, matching how the HR/payroll record
+  // this data is sourced from names a person. middleName is the only part
+  // that is genuinely optional.
+  firstName  String
+  middleName String?
+  lastName   String
+
+  dateOfBirth DateTime @db.Date
+  hireDate    DateTime @db.Date
+
+  // Encrypted with AES-256-GCM in application code (see
+  // modules/shared/pii.ts), not stored as plain text and not encrypted by
+  // a Postgres extension - encryption happens before the value ever
+  // reaches a SQL statement, so neither the plaintext nor the key can end
+  // up in a database query log.
+  //
+  // Nullable, unlike every other field this migration made required: a
+  // NOT NULL column needs every existing row backfilled, and the only
+  // correct way to backfill an ENCRYPTED value is to run the encryption
+  // function with a real key against a real target environment - that
+  // cannot be done from portable SQL in a migration file, and a migration
+  // is exactly the wrong place to embed a specific environment's ciphertext
+  // anyway (it would only decrypt correctly under that one environment's
+  // key). Required for newly-created personnel is enforced by
+  // createPersonnelSchema instead. A worker missing one shows as "not on
+  // file" until entered through the edit form.
+  ssnEncrypted                  Bytes?
+  driversLicenseNumberEncrypted Bytes?
+
+  homeStreet1    String
+  homeStreet2    String?
+  homeCity       String
+  homeState      String @db.Char(2)
+  homePostalCode String
+  homeCountry    String @default("US")
+
+  phoneNumber String
+
   craft          Craft
   classification Classification
   certifications String[] // e.g. ["OSHA-30", "Crane Operator"]
@@ -268,6 +311,29 @@ model Equipment {
   status   EquipmentStatus @default(AVAILABLE)
   location String?
 
+  // Fleet number in the form XX-XX-XXXX: type code, weight/capacity code,
+  // then a sequence unique within that type+capacity pair. Dispatcher-
+  // assigned, like Personnel.employeeId, not generated the way PO numbers
+  // are - equipment usually already carries a fleet number painted on it
+  // or printed on a rental tag, and this is meant to be able to match
+  // that. The registries defining what each code means live in
+  // modules/inventory/equipmentNumber.ts, not here: they are a working
+  // taxonomy expected to grow, and a plain validated string keeps adding
+  // a category a one-line code change rather than a migration.
+  equipmentNumber String
+
+  make  String
+  model String
+
+  // Nullable rather than defaulted to 0: a piece of equipment already in
+  // service when this column was added has unknown, not zero, hours, and
+  // 0 would misreport it as unused. Newly created equipment gets a real
+  // 0 from createEquipmentSchema's default, since that one actually is
+  // true for something brand new.
+  operatingHours Float?
+
+  requiredCertifications String[] @default([]) // e.g. ["Crane Operator", "OSHA-30"]
+
   assignments    Assignment[]
   quoteLineItems QuoteLineItem[]
   quoteRequests  QuoteRequestItem[]
@@ -276,6 +342,9 @@ model Equipment {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  // Unique within an org, not globally - matching Personnel.employeeId
+  // and Job.jobNumber.
+  @@unique([orgId, equipmentNumber])
   @@index([orgId])
 }
 

@@ -53,7 +53,9 @@ export default async function PersonnelPage({ searchParams }: PersonnelPageProps
               <tr key={p.id}>
                 <td>{p.employeeId}</td>
                 <td>
-                  <Link href={`/inventory/personnel/${p.id}`}>{p.name}</Link>
+                  <Link href={`/inventory/personnel/${p.id}`}>
+                    {p.firstName} {p.lastName}
+                  </Link>
                 </td>
                 <td>{craftLabel(p.craft)}</td>
                 <td>{classificationLabel(p.classification)}</td>

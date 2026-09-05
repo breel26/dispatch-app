@@ -9,6 +9,7 @@ import {
   type CreateEquipmentInput, type UpdateEquipmentInput,
 } from "./schemas";
 import { applyStockDelta } from "./ledger";
+import { encryptPii } from "@/modules/shared/pii";
 
 // orgId is a required first argument on every function - see the note in
 // jobs/repository.ts for why scoping is passed explicitly.
@@ -26,6 +27,15 @@ export class DuplicateEmployeeIdError extends Error {
   }
 }
 
+// ssnEncrypted and driversLicenseNumberEncrypted hold ciphertext plus an
+// IV, not display data. Any code reading a Personnel row for a Server
+// Component to hand off must not forward those two fields as a prop into
+// a Client Component - Next would serialize the raw bytes into the
+// page's RSC payload, shipping encrypted material and its IV to the
+// browser for no reason. Decrypt (see modules/shared/pii.ts decryptPii)
+// only in server-side code, and only render the resulting plaintext as
+// text content, never as a component prop.
+
 // The check runs against the NORMALIZED id from the parsed data, not the
 // raw input - otherwise typing "1" would sail past a check for "000001"
 // and only fail later at the index.
@@ -40,23 +50,33 @@ async function assertEmployeeIdAvailable(
 ): Promise<void> {
   const existing = await prisma.personnel.findUnique({
     where: { orgId_employeeId: { orgId, employeeId } },
-    select: { id: true, name: true },
+    select: { id: true, firstName: true, lastName: true },
   });
   if (existing && existing.id !== excludePersonnelId) {
-    throw new DuplicateEmployeeIdError(employeeId, existing.name);
+    throw new DuplicateEmployeeIdError(employeeId, `${existing.firstName} ${existing.lastName}`);
   }
 }
 
 export async function createPersonnel(orgId: string, input: CreatePersonnelInput): Promise<Personnel> {
-  const data = createPersonnelSchema.parse(input);
-  await assertEmployeeIdAvailable(orgId, data.employeeId);
-  return prisma.personnel.create({ data: { ...data, orgId } });
+  const { ssn, driversLicenseNumber, ...rest } = createPersonnelSchema.parse(input);
+  await assertEmployeeIdAvailable(orgId, rest.employeeId);
+  return prisma.personnel.create({
+    data: {
+      ...rest,
+      orgId,
+      // Encrypted here, not in the schema - the schema only validates
+      // format. This is the one place a plaintext ssn/driversLicenseNumber
+      // is ever turned into the bytes that reach the database.
+      ssnEncrypted: encryptPii(ssn),
+      driversLicenseNumberEncrypted: encryptPii(driversLicenseNumber),
+    },
+  });
 }
 
 export async function listPersonnel(orgId: string, activeOnly = true): Promise<Personnel[]> {
   return prisma.personnel.findMany({
     where: { orgId, ...(activeOnly ? { isActive: true } : {}) },
-    orderBy: { name: "asc" },
+    orderBy: [{ lastName: "asc" }, { firstName: "asc" }],
   });
 }
 
@@ -69,13 +89,25 @@ export async function updatePersonnel(
   id: string,
   input: UpdatePersonnelInput
 ): Promise<Personnel> {
-  const data = updatePersonnelSchema.parse(input);
-  if (data.employeeId !== undefined) {
+  const { ssn, driversLicenseNumber, ...rest } = updatePersonnelSchema.parse(input);
+  if (rest.employeeId !== undefined) {
     // Excludes this worker, so re-saving the edit form without changing
     // the number does not report a clash with themselves.
-    await assertEmployeeIdAvailable(orgId, data.employeeId, id);
+    await assertEmployeeIdAvailable(orgId, rest.employeeId, id);
   }
-  return prisma.personnel.update({ where: { id, orgId }, data });
+  return prisma.personnel.update({
+    where: { id, orgId },
+    data: {
+      ...rest,
+      // undefined means "field not submitted", and Prisma leaves an
+      // undefined field untouched on update - this is what makes leaving
+      // the SSN/license inputs blank on the edit form mean "keep the
+      // existing encrypted value", not "clear it".
+      ssnEncrypted: ssn !== undefined ? encryptPii(ssn) : undefined,
+      driversLicenseNumberEncrypted:
+        driversLicenseNumber !== undefined ? encryptPii(driversLicenseNumber) : undefined,
+    },
+  });
 }
 
 // Soft-delete, matching the Job/cancelJob pattern - a deactivated worker
@@ -163,8 +195,35 @@ export async function adjustMaterialQuantity(
 
 // --- Equipment ---
 
+// Mirrors DuplicateEmployeeIdError / DuplicateJobNumberError - names who
+// already holds the number rather than surfacing a bare unique-constraint
+// error. The check runs against the normalized number, so "03070142" is
+// correctly caught as a clash with the stored "03-07-0142" instead of
+// slipping past and failing later at the index.
+export class DuplicateEquipmentNumberError extends Error {
+  constructor(equipmentNumber: string, existingName: string) {
+    super(`Equipment number ${equipmentNumber} is already used by "${existingName}"`);
+    this.name = "DuplicateEquipmentNumberError";
+  }
+}
+
+async function assertEquipmentNumberAvailable(
+  orgId: string,
+  equipmentNumber: string,
+  excludeEquipmentId?: string
+): Promise<void> {
+  const existing = await prisma.equipment.findUnique({
+    where: { orgId_equipmentNumber: { orgId, equipmentNumber } },
+    select: { id: true, name: true },
+  });
+  if (existing && existing.id !== excludeEquipmentId) {
+    throw new DuplicateEquipmentNumberError(equipmentNumber, existing.name);
+  }
+}
+
 export async function createEquipment(orgId: string, input: CreateEquipmentInput): Promise<Equipment> {
   const data = createEquipmentSchema.parse(input);
+  await assertEquipmentNumberAvailable(orgId, data.equipmentNumber);
   return prisma.equipment.create({ data: { ...data, orgId } });
 }
 
@@ -188,5 +247,10 @@ export async function updateEquipment(
   input: UpdateEquipmentInput
 ): Promise<Equipment> {
   const data = updateEquipmentSchema.parse(input);
+  if (data.equipmentNumber !== undefined) {
+    // Excludes this piece of equipment, so re-saving the edit form
+    // without changing the number does not report a clash with itself.
+    await assertEquipmentNumberAvailable(orgId, data.equipmentNumber, id);
+  }
   return prisma.equipment.update({ where: { id, orgId }, data });
 }

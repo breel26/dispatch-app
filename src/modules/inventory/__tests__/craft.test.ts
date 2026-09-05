@@ -34,8 +34,15 @@ describe("craft values", () => {
     ]);
   });
 
-  it("offers exactly journeyman and apprentice", () => {
-    expect([...CLASSIFICATION_VALUES]).toEqual(["JOURNEYMAN", "APPRENTICE"]);
+  // Foreman and Superintendent were added after confirming these are real
+  // job-site distinctions the company tracks, not just a trade-grade pair.
+  it("offers apprentice, journeyman, foreman, and superintendent", () => {
+    expect([...CLASSIFICATION_VALUES]).toEqual([
+      "APPRENTICE",
+      "JOURNEYMAN",
+      "FOREMAN",
+      "SUPERINTENDENT",
+    ]);
   });
 });
 
@@ -100,7 +107,8 @@ describe("guards", () => {
     expect(isCraft("carpenter")).toBe(false); // wrong case
     expect(isCraft("WELDER")).toBe(false); // not a trade we track
     expect(isCraft("")).toBe(false);
-    expect(isClassification("FOREMAN")).toBe(false);
+    expect(isClassification("Foreman")).toBe(false); // the label, not the value
+    expect(isClassification("SITE_SUPERVISOR")).toBe(false); // not a grade we track
     expect(isClassification("")).toBe(false);
   });
 });

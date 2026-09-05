@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { CRAFT_VALUES, CLASSIFICATION_VALUES } from "./craft";
 import { normalizeEmployeeIdInput } from "./employeeId";
+import { normalizeEquipmentNumberInput } from "./equipmentNumber";
 
 // --- Personnel ---
 
@@ -20,13 +21,64 @@ const employeeIdSchema = z.string().transform((value, ctx): string => {
   return normalized;
 });
 
-// craft and classification replaced a single free-text `role`, which had
-// been carrying both facts at once ("JM Carpenter"). Building the enums
-// from the same tuples the dropdowns render means a trade can never be
-// selectable in the UI but rejected here.
+// SSN and driver's license number are validated here as plain strings -
+// this schema's job is format, not storage. The repository encrypts the
+// validated value with modules/shared/pii.ts before it reaches
+// ssnEncrypted / driversLicenseNumberEncrypted; nothing here ever touches
+// a Buffer, and no encrypted bytes are constructed from user input by
+// anything other than the repository.
+const ssnSchema = z
+  .string()
+  .regex(/^\d{3}-\d{2}-\d{4}$/, "ssn must be formatted XXX-XX-XXXX");
+const driversLicenseNumberSchema = z
+  .string()
+  .min(1, "driver's license number is required");
+const phoneNumberSchema = z
+  .string()
+  .regex(/^\(\d{3}\) \d{3}-\d{4}$/, "phone number must be formatted (XXX) XXX-XXXX");
+
+// Flat fields matching the flat homeStreet1/homeCity/... columns on
+// Personnel, rather than a nested address object - the DB has no nested
+// address table, so a nested Zod shape would just need unwrapping again
+// before the Prisma write.
+const homeStreet1Schema = z.string().min(1, "street address is required");
+const homeStreet2Schema = z.string().optional();
+const homeCitySchema = z.string().min(1, "city is required");
+const homeStateSchema = z
+  .string()
+  .length(2, "state must be a 2-letter abbreviation")
+  .transform((s) => s.toUpperCase());
+const homePostalCodeSchema = z
+  .string()
+  .regex(/^\d{5}(-\d{4})?$/, "postal code must be formatted 12345 or 12345-6789");
+
+// craft and classification replaced a single free-text role field, which
+// had been carrying both facts at once (a trade plus a classification
+// abbreviation squeezed into one string). Building the enums from the
+// same tuples the dropdowns render means a trade can never be selectable
+// in the UI but rejected here.
 export const createPersonnelSchema = z.object({
   employeeId: employeeIdSchema,
-  name: z.string().min(1, "name is required"),
+
+  firstName: z.string().min(1, "first name is required"),
+  middleName: z.string().optional(),
+  lastName: z.string().min(1, "last name is required"),
+
+  dateOfBirth: z.coerce.date(),
+  hireDate: z.coerce.date(),
+
+  ssn: ssnSchema,
+  driversLicenseNumber: driversLicenseNumberSchema,
+
+  homeStreet1: homeStreet1Schema,
+  homeStreet2: homeStreet2Schema,
+  homeCity: homeCitySchema,
+  homeState: homeStateSchema,
+  homePostalCode: homePostalCodeSchema,
+  homeCountry: z.string().min(1).default("US"),
+
+  phoneNumber: phoneNumberSchema,
+
   craft: z.enum(CRAFT_VALUES, { message: "select a craft" }),
   classification: z.enum(CLASSIFICATION_VALUES, { message: "select a classification" }),
   certifications: z.array(z.string().min(1)).default([]),
@@ -34,9 +86,35 @@ export const createPersonnelSchema = z.object({
 });
 export type CreatePersonnelInput = z.infer<typeof createPersonnelSchema>;
 
+// Every HR field is optional on update, including ssn and
+// driversLicenseNumber - a blank field on the edit form means "leave the
+// encrypted value as it is", not "clear it". The action layer maps an
+// empty form field to undefined before this runs (the same
+// emptyToUndefined convention already used for every other optional field
+// in this app), so "leave unchanged" and "submitted empty" collapse to
+// the same thing rather than needing a separate sentinel.
 export const updatePersonnelSchema = z.object({
   employeeId: employeeIdSchema.optional(),
-  name: z.string().min(1).optional(),
+
+  firstName: z.string().min(1).optional(),
+  middleName: z.string().optional(),
+  lastName: z.string().min(1).optional(),
+
+  dateOfBirth: z.coerce.date().optional(),
+  hireDate: z.coerce.date().optional(),
+
+  ssn: ssnSchema.optional(),
+  driversLicenseNumber: driversLicenseNumberSchema.optional(),
+
+  homeStreet1: homeStreet1Schema.optional(),
+  homeStreet2: homeStreet2Schema,
+  homeCity: homeCitySchema.optional(),
+  homeState: homeStateSchema.optional(),
+  homePostalCode: homePostalCodeSchema.optional(),
+  homeCountry: z.string().min(1).optional(),
+
+  phoneNumber: phoneNumberSchema.optional(),
+
   craft: z.enum(CRAFT_VALUES, { message: "select a craft" }).optional(),
   classification: z
     .enum(CLASSIFICATION_VALUES, { message: "select a classification" })
@@ -91,17 +169,49 @@ export const equipmentStatusValues = [
   "OUT_OF_SERVICE",
 ] as const;
 
+// Normalized here for the same reason employeeId is: a fleet number
+// people read off a painted stencil or a rental tag arrives however it
+// was typed ("03070142", "03-07-0142"), and the canonical dashed form is
+// what gets stored, so the same equipment can never be filed under two
+// different-looking numbers.
+const equipmentNumberSchema = z.string().transform((value, ctx): string => {
+  const normalized = normalizeEquipmentNumberInput(value);
+  if (normalized === null) {
+    ctx.addIssue({
+      code: "custom",
+      message: "equipment number must be formatted XX-XX-XXXX with a registered type and capacity code",
+    });
+    return z.NEVER;
+  }
+  return normalized;
+});
+
 export const createEquipmentSchema = z.object({
+  equipmentNumber: equipmentNumberSchema,
   name: z.string().min(1, "name is required"),
   type: z.string().min(1, "type is required"),
+  make: z.string().min(1, "make is required"),
+  model: z.string().min(1, "model is required"),
+  // Defaults to 0 here because it is actually true for equipment that is
+  // genuinely brand new - unlike the migration backfill for equipment
+  // already in service, which deliberately left this null rather than
+  // claim a false 0. See the note on Equipment.operatingHours in
+  // schema.prisma.
+  operatingHours: z.number().nonnegative().default(0),
+  requiredCertifications: z.array(z.string().min(1)).default([]),
   status: z.enum(equipmentStatusValues).default("AVAILABLE"),
   location: z.string().optional(),
 });
 export type CreateEquipmentInput = z.infer<typeof createEquipmentSchema>;
 
 export const updateEquipmentSchema = z.object({
+  equipmentNumber: equipmentNumberSchema.optional(),
   name: z.string().min(1).optional(),
   type: z.string().min(1).optional(),
+  make: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  operatingHours: z.number().nonnegative().optional(),
+  requiredCertifications: z.array(z.string().min(1)).optional(),
   status: z.enum(equipmentStatusValues).optional(),
   location: z.string().optional(),
 });

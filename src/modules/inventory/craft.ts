@@ -29,7 +29,15 @@ export const CRAFT_VALUES = [
 
 export type Craft = (typeof CRAFT_VALUES)[number];
 
-export const CLASSIFICATION_VALUES = ["JOURNEYMAN", "APPRENTICE"] as const;
+// Foreman and Superintendent were added alongside the original pair after
+// confirming these are real job-site distinctions the company tracks, not
+// just a trade-grade pair - see the Classification enum in schema.prisma.
+export const CLASSIFICATION_VALUES = [
+  "APPRENTICE",
+  "JOURNEYMAN",
+  "FOREMAN",
+  "SUPERINTENDENT",
+] as const;
 
 export type Classification = (typeof CLASSIFICATION_VALUES)[number];
 
@@ -50,8 +58,10 @@ const CRAFT_LABELS: Record<Craft, string> = {
 };
 
 const CLASSIFICATION_LABELS: Record<Classification, string> = {
-  JOURNEYMAN: "Journeyman",
   APPRENTICE: "Apprentice",
+  JOURNEYMAN: "Journeyman",
+  FOREMAN: "Foreman",
+  SUPERINTENDENT: "Superintendent",
 };
 
 // Narrowing guards for the FormData boundary, where everything arrives as
