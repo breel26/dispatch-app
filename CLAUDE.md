@@ -175,6 +175,10 @@ The flow is always:
   there when it proves something only Postgres can (a CHECK or EXCLUDE
   constraint firing, sequence atomicity) — and keep the fast unit test of
   the surrounding logic too; they prove different things.
+- CI (`.github/workflows/ci.yml`) runs both suites on every push: unit
+  tests, typecheck, lint and build in one job; migrations, a schema-drift
+  check and the integration suite against a real Postgres service
+  container in the other. A change that only passes locally is not done.
 - Before saying a task is complete: run tests, linter, and typechecker.
   All three, every time.
 - If a test fails, fix the root cause — don't loosen an assertion to make

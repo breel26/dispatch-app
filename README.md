@@ -48,7 +48,10 @@ Then open http://localhost:3000.
 | `npx prisma migrate dev` | Create and apply a new migration |
 | `npx prisma studio` | Browse the database |
 
-Run tests, lint and typecheck before calling a change done.
+Run tests, lint and typecheck before calling a change done. CI
+(`.github/workflows/ci.yml`) runs all of it on every push, including the
+integration suite against a Postgres service container and a check that
+`schema.prisma` still matches the migrations.
 
 ## How it is organised
 

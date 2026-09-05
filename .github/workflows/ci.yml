@@ -1,0 +1,124 @@
+name: CI
+
+# Runs on every branch push, not just pull requests, because work on this
+# repo has gone straight to main before now — CI that only fires on a PR
+# would report after the fact.
+on:
+  push:
+  pull_request:
+
+# A newer push to the same branch makes the in-flight run pointless.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    name: Typecheck, lint, unit tests, build
+    runs-on: ubuntu-latest
+
+    env:
+      # prisma.config.ts reads DATABASE_URL even for `generate`, which never
+      # opens a connection. Any syntactically valid URL satisfies it.
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/unused
+      # `next build` prerenders a handful of static pages, which mounts
+      # ClerkProvider and needs a structurally valid key. These are
+      # placeholders, not credentials — the publishable key is just base64
+      # of "clerk.example.com$". Real keys are never needed to compile.
+      NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: pk_test_Y2xlcmsuZXhhbXBsZS5jb20k
+      CLERK_SECRET_KEY: sk_test_ciplaceholdernotarealsecret0000000000
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Local development runs Node 26; CI pins the LTS line. If that gap
+      # ever matters, this is the line to change.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # Must come before anything that compiles: the types the whole
+      # codebase is written against are generated from schema.prisma, and
+      # the generated client is not committed.
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Unit tests
+        run: npm test
+
+      - name: Production build
+        run: npm run build
+
+  integration:
+    name: Integration tests (real Postgres)
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Matches the major version running on Neon, so the constraints
+        # exercised here behave the way they do in the real database. The
+        # official image ships the contrib modules, which is where
+        # btree_gist comes from — the assignment overlap constraints do not
+        # exist without it.
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: dispatch_test
+        ports:
+          - 5432:5432
+        # Without the health check the job races the container and the
+        # first migration fails with a connection error.
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/dispatch_test
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npx prisma generate
+
+      # Proves the migrations apply cleanly to an empty database, which is
+      # worth knowing on its own: several of them are hand-written and
+      # contain backfills that must no-op rather than fail when there are
+      # no rows to backfill.
+      - name: Apply migrations
+        run: npx prisma migrate deploy
+
+      # Catches someone editing schema.prisma without writing a migration.
+      # Compares the freshly migrated database against the schema file and
+      # fails (exit 2) if they disagree. This project leans hard on
+      # hand-written migration SQL, so the two drifting apart is a live
+      # risk rather than a theoretical one.
+      - name: Check schema.prisma matches the migrations
+        run: npx prisma migrate diff --from-config-datasource --to-schema prisma/schema.prisma --exit-code
+
+      # The tests that cannot run without a real Postgres: the GiST EXCLUDE
+      # constraints that prevent double-booking, and PO-number atomicity
+      # under concurrent nextval() calls.
+      - name: Integration tests
+        run: npm run test:integration
