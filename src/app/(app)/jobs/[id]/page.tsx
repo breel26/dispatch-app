@@ -49,9 +49,44 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
     }
     if (a.resourceType === "EQUIPMENT" && a.equipmentId) {
       const item = equipmentById.get(a.equipmentId);
-      return item ? `${item.name} - ${item.type}` : a.equipmentId;
+      return item ? `${item.equipmentNumber} — ${item.name} — ${item.type}` : a.equipmentId;
     }
     return "—";
+  }
+
+  // Labor first, then Equipment, then Materials - a fixed order rather
+  // than one flat table sorted however assignments were created.
+  const laborAssignments = assignments.filter((a) => a.resourceType === "PERSONNEL");
+  const equipmentAssignments = assignments.filter((a) => a.resourceType === "EQUIPMENT");
+  const materialAssignments = assignments.filter((a) => a.resourceType === "MATERIAL");
+
+  function assignmentTable(rows: typeof assignments) {
+    return (
+      <table className={styles.table}>
+        <thead>
+          <tr>
+            <th>Resource</th>
+            <th>Quantity</th>
+            <th>Start</th>
+            <th>End</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((a) => (
+            <tr key={a.id}>
+              <td>{resourceLabel(a)}</td>
+              <td>{a.quantity ?? "—"}</td>
+              <td>{a.startAt.toLocaleString()}</td>
+              <td>{a.endAt ? a.endAt.toLocaleString() : "—"}</td>
+              <td>
+                <CancelAssignmentButton jobId={id} assignmentId={a.id} />
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    );
   }
 
   return (
@@ -92,46 +127,37 @@ export default async function JobDetailPage({ params }: JobDetailPageProps) {
               label: `${p.firstName} ${p.lastName} - ${describeCraft(p.craft, p.classification)}`,
             }))}
           materialOptions={materials.map((m) => ({ id: m.id, label: `${m.name} (${m.sku})` }))}
-          // Equipment is picked in two steps - who owns it (the company
-          // itself, or which rental vendor) and then what kind of machine -
-          // so `owner` and `type` are carried alongside the flat label,
-          // rather than only handing the form one pre-joined string.
+          // Equipment is found by owner+type (browse) or by fleet number
+          // (search) - `owner`, `type`, and `number` are carried alongside
+          // the id so AssignmentForm can narrow by any of them.
           equipmentOptions={equipment.map((e) => ({
             id: e.id,
-            label: `${e.name} - ${e.type}`,
+            number: e.equipmentNumber,
             owner: e.name,
             type: e.type,
           }))}
         />
-        {assignments.length === 0 ? (
-          <p className={styles.empty}>No assignments yet.</p>
-        ) : (
-          <table className={styles.table}>
-            <thead>
-              <tr>
-                <th>Type</th>
-                <th>Resource</th>
-                <th>Quantity</th>
-                <th>Start</th>
-                <th>End</th>
-                <th></th>
-              </tr>
-            </thead>
-            <tbody>
-              {assignments.map((a) => (
-                <tr key={a.id}>
-                  <td>{a.resourceType}</td>
-                  <td>{resourceLabel(a)}</td>
-                  <td>{a.quantity ?? "—"}</td>
-                  <td>{a.startAt.toLocaleString()}</td>
-                  <td>{a.endAt ? a.endAt.toLocaleString() : "—"}</td>
-                  <td>
-                    <CancelAssignmentButton jobId={job.id} assignmentId={a.id} />
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+        {assignments.length === 0 && <p className={styles.empty}>No assignments yet.</p>}
+
+        {laborAssignments.length > 0 && (
+          <div className={styles.subsection}>
+            <h3>Labor</h3>
+            {assignmentTable(laborAssignments)}
+          </div>
+        )}
+
+        {equipmentAssignments.length > 0 && (
+          <div className={styles.subsection}>
+            <h3>Equipment</h3>
+            {assignmentTable(equipmentAssignments)}
+          </div>
+        )}
+
+        {materialAssignments.length > 0 && (
+          <div className={styles.subsection}>
+            <h3>Materials</h3>
+            {assignmentTable(materialAssignments)}
+          </div>
         )}
       </div>
 

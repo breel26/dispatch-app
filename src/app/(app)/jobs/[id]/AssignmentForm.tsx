@@ -3,6 +3,15 @@
 import { useActionState, useState, useMemo } from "react";
 import { createAssignmentAction } from "./dispatch-actions";
 import type { ActionState } from "../actions";
+import SearchableSelect from "./SearchableSelect";
+import {
+  filterByNumber,
+  ownersFor,
+  typesFor,
+  unitsFor,
+  equipmentOptionLabel,
+  type EquipmentUnitOption,
+} from "./equipmentPicker";
 import styles from "./AssignmentForm.module.css";
 
 interface ResourceOption {
@@ -10,21 +19,11 @@ interface ResourceOption {
   label: string;
 }
 
-// Equipment carries two extra facts a dispatcher actually picks by:
-// who it belongs to (the company itself, or which rental vendor) and
-// what kind of machine it is. Personnel and Material stay flat - a
-// worker is picked by name/trade in one step, and there is no
-// "ownership" dimension for a material.
-interface EquipmentOption extends ResourceOption {
-  owner: string;
-  type: string;
-}
-
 interface AssignmentFormProps {
   jobId: string;
   personnelOptions: ResourceOption[];
   materialOptions: ResourceOption[];
-  equipmentOptions: EquipmentOption[];
+  equipmentOptions: EquipmentUnitOption[];
 }
 
 type ResourceType = "PERSONNEL" | "MATERIAL" | "EQUIPMENT";
@@ -40,41 +39,73 @@ export default function AssignmentForm({
     {} as ActionState
   );
   const [resourceType, setResourceType] = useState<ResourceType>("PERSONNEL");
+  const [resourceId, setResourceId] = useState("");
 
-  // Equipment selection is owner first, then type - "Company Owned", then
-  // "Excavator" - matching how a dispatcher actually thinks about picking
-  // a machine, rather than one flat list mixing vendors and equipment
-  // together.
-  const owners = useMemo(
-    () => Array.from(new Set(equipmentOptions.map((o) => o.owner))).sort(),
-    [equipmentOptions]
+  // Equipment is found two ways: browse by owner ("Company Owned" or a
+  // rental vendor) then type, or type a fleet number to jump straight to
+  // it. Both work at once - the number narrows owners/types/units
+  // together, so typing "0002" while nothing else is picked leaves only
+  // the owner(s) and type(s) that actually have a matching unit.
+  const [numberQuery, setNumberQuery] = useState("");
+  const [equipmentOwner, setEquipmentOwner] = useState("");
+  const [equipmentType, setEquipmentType] = useState("");
+  const [equipmentUnitId, setEquipmentUnitId] = useState("");
+
+  const narrowedByNumber = useMemo(
+    () => filterByNumber(equipmentOptions, numberQuery),
+    [equipmentOptions, numberQuery]
   );
-  const [equipmentOwner, setEquipmentOwner] = useState<string>("");
-
+  const owners = useMemo(() => ownersFor(narrowedByNumber), [narrowedByNumber]);
   const typesForOwner = useMemo(
-    () =>
-      Array.from(
-        new Set(equipmentOptions.filter((o) => o.owner === equipmentOwner).map((o) => o.type))
-      ).sort(),
-    [equipmentOptions, equipmentOwner]
+    () => typesFor(narrowedByNumber, equipmentOwner),
+    [narrowedByNumber, equipmentOwner]
   );
-  const [equipmentType, setEquipmentType] = useState<string>("");
-
-  // The common case is exactly one unit per owner+type pair, in which
-  // case picking the type is enough to identify the equipment and no
-  // further choice is needed. If the fleet ever has two units sharing an
-  // owner and type, this list has more than one entry and a third select
-  // appears so the pair alone is not treated as ambiguous.
   const matchingUnits = useMemo(
-    () => equipmentOptions.filter((o) => o.owner === equipmentOwner && o.type === equipmentType),
-    [equipmentOptions, equipmentOwner, equipmentType]
+    () => unitsFor(narrowedByNumber, equipmentOwner, equipmentType),
+    [narrowedByNumber, equipmentOwner, equipmentType]
   );
-  const [equipmentUnitId, setEquipmentUnitId] = useState<string>("");
 
-  const resolvedEquipmentId =
-    matchingUnits.length === 1 ? matchingUnits[0].id : equipmentUnitId;
+  function resetResourceSelection(nextType: ResourceType) {
+    setResourceType(nextType);
+    setResourceId("");
+    setNumberQuery("");
+    setEquipmentOwner("");
+    setEquipmentType("");
+    setEquipmentUnitId("");
+  }
+
+  // Typing a fleet number can rule out the owner/type already picked (e.g.
+  // an owner with no unit matching that number) - when that happens, clear
+  // the now-invalid selections downstream rather than leaving a select
+  // showing a value that is no longer one of its own options.
+  function handleNumberQueryChange(text: string) {
+    setNumberQuery(text);
+    const narrowed = filterByNumber(equipmentOptions, text);
+
+    const validOwners = ownersFor(narrowed);
+    if (equipmentOwner && !validOwners.includes(equipmentOwner)) {
+      setEquipmentOwner("");
+      setEquipmentType("");
+      setEquipmentUnitId("");
+      return;
+    }
+
+    const validTypes = typesFor(narrowed, equipmentOwner);
+    if (equipmentType && !validTypes.includes(equipmentType)) {
+      setEquipmentType("");
+      setEquipmentUnitId("");
+      return;
+    }
+
+    const validUnitIds = unitsFor(narrowed, equipmentOwner, equipmentType).map((u) => u.id);
+    if (equipmentUnitId && !validUnitIds.includes(equipmentUnitId)) {
+      setEquipmentUnitId("");
+    }
+  }
 
   const options = resourceType === "PERSONNEL" ? personnelOptions : materialOptions;
+  const canSubmit =
+    resourceType === "EQUIPMENT" ? !!equipmentUnitId : !!resourceId;
 
   return (
     <form action={formAction} className={styles.form}>
@@ -84,7 +115,7 @@ export default function AssignmentForm({
           id="resourceType"
           name="resourceType"
           value={resourceType}
-          onChange={(e) => setResourceType(e.target.value as ResourceType)}
+          onChange={(e) => resetResourceSelection(e.target.value as ResourceType)}
         >
           <option value="PERSONNEL">Personnel</option>
           <option value="MATERIAL">Material</option>
@@ -94,6 +125,16 @@ export default function AssignmentForm({
 
       {resourceType === "EQUIPMENT" ? (
         <>
+          <div className={styles.field}>
+            <label htmlFor="equipmentNumberQuery">Fleet number</label>
+            <input
+              id="equipmentNumberQuery"
+              value={numberQuery}
+              onChange={(e) => handleNumberQueryChange(e.target.value)}
+              placeholder="Type a fleet number..."
+            />
+          </div>
+
           <div className={styles.field}>
             <label htmlFor="equipmentOwner">Owned by</label>
             <select
@@ -140,9 +181,11 @@ export default function AssignmentForm({
             </select>
           </div>
 
-          {/* Only shown when owner+type does not already narrow to a
-              single machine - the common case skips straight past this. */}
-          {equipmentType && matchingUnits.length > 1 && (
+          {/* Always shown once a type is picked - even a single matching
+              unit is listed by its fleet number rather than auto-filled,
+              so the number is always visible and always an explicit
+              choice. */}
+          {equipmentType && (
             <div className={styles.field}>
               <label htmlFor="equipmentUnitId">Unit</label>
               <select
@@ -152,29 +195,31 @@ export default function AssignmentForm({
                 required
               >
                 <option value="" disabled>
-                  Multiple units match - select one
+                  {matchingUnits.length === 0 ? "No matching equipment" : "Select a unit"}
                 </option>
                 {matchingUnits.map((unit) => (
                   <option key={unit.id} value={unit.id}>
-                    {unit.label}
+                    {equipmentOptionLabel(unit)}
                   </option>
                 ))}
               </select>
             </div>
           )}
 
-          <input type="hidden" name="resourceId" value={resolvedEquipmentId} />
+          <input type="hidden" name="resourceId" value={equipmentUnitId} />
         </>
       ) : (
         <div className={styles.field}>
           <label htmlFor="resourceId">Resource</label>
-          <select id="resourceId" name="resourceId" required>
-            {options.map((o) => (
-              <option key={o.id} value={o.id}>
-                {o.label}
-              </option>
-            ))}
-          </select>
+          <SearchableSelect
+            name="resourceId"
+            options={options}
+            value={resourceId}
+            onChange={setResourceId}
+            placeholder={
+              resourceType === "PERSONNEL" ? "Search personnel..." : "Search materials..."
+            }
+          />
         </div>
       )}
 
@@ -200,11 +245,7 @@ export default function AssignmentForm({
         <input id="notes" name="notes" />
       </div>
 
-      <button
-        type="submit"
-        className={styles.submit}
-        disabled={isPending || (resourceType === "EQUIPMENT" && !resolvedEquipmentId)}
-      >
+      <button type="submit" className={styles.submit} disabled={isPending || !canSubmit}>
         {isPending ? "Assigning..." : "Add Assignment"}
       </button>
 

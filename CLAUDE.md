@@ -230,6 +230,14 @@ The flow is always:
 - Keep functions small and single-purpose.
 - Match existing naming/formatting conventions rather than introducing a
   new style mid-project.
+- Any new user-selectable dropdown (personnel, equipment, vendors, etc.)
+  must narrow its options as the user types, and must never submit an
+  auto-selected or default value — a plain `<select>` silently pre-highlights
+  its first option, which lets a form submit a resource nobody actually
+  chose. Use the shared `SearchableSelect` component
+  (`src/app/(app)/jobs/[id]/SearchableSelect.tsx`) rather than a bare
+  `<select>` for any field where the user is choosing one resource from a
+  list.
 
 ## Scope discipline
 - Make the smallest change that correctly solves the stated problem.

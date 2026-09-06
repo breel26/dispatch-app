@@ -34,6 +34,15 @@
   align-items: center;
 }
 
+.subsection {
+  margin-top: 1.25rem;
+}
+
+.subsection h3 {
+  font-size: 0.95rem;
+  margin-bottom: 0.5rem;
+}
+
 .table {
   width: 100%;
   border-collapse: collapse;
