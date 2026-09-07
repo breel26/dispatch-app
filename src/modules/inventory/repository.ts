@@ -94,6 +94,25 @@ export async function getPersonnelByEmployeeId(
   return prisma.personnel.findUnique({ where: { orgId_employeeId: { orgId, employeeId } } });
 }
 
+// Every employee number in use, with just enough of the worker's identity
+// to say who holds one. Feeds the importer's clash review: it needs both
+// "is this number taken" and "taken by whom", and a per-row lookup would
+// be one query per spreadsheet row.
+//
+// Deliberately selects three columns and no more. Personnel rows carry
+// encrypted SSN and driver license, and this result is summarized into
+// something rendered in a Client Component - so the sensitive columns are
+// never loaded in the first place, rather than loaded and then carefully
+// not used.
+export async function listEmployeeIdIndex(
+  orgId: string
+): Promise<{ employeeId: string; firstName: string; lastName: string }[]> {
+  return prisma.personnel.findMany({
+    where: { orgId },
+    select: { employeeId: true, firstName: true, lastName: true },
+  });
+}
+
 export async function updatePersonnel(
   orgId: string,
   id: string,
@@ -258,6 +277,19 @@ export async function getEquipmentByNumber(
   equipmentNumber: string
 ): Promise<Equipment | null> {
   return prisma.equipment.findUnique({ where: { orgId_equipmentNumber: { orgId, equipmentNumber } } });
+}
+
+// Every equipment number in use, with enough of the machine to identify
+// it in the importer's clash review. Same one-query-per-import reasoning
+// as listEmployeeIdIndex; nextEquipmentNumber also needs the whole set at
+// once to find the highest sequence in a type+capacity family.
+export async function listEquipmentNumberIndex(
+  orgId: string
+): Promise<{ equipmentNumber: string; name: string; make: string; model: string }[]> {
+  return prisma.equipment.findMany({
+    where: { orgId },
+    select: { equipmentNumber: true, name: true, make: true, model: true },
+  });
 }
 
 export async function updateEquipment(

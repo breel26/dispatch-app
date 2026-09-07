@@ -1,4 +1,5 @@
 import { createEquipmentSchema, type CreateEquipmentInput } from "@/modules/inventory/schemas";
+import type { RawRow, RowValidationResult, ValidRow } from "../rows";
 
 // Reuses createEquipmentSchema wholesale, same reasoning as
 // import-export/schemas/personnel.ts: the equipment number format check
@@ -38,29 +39,26 @@ export function prepareImportRow(raw: Record<string, unknown>): Record<string, u
   return prepared;
 }
 
-export interface EquipmentImportResult {
-  valid: EquipmentImportRow[];
-  errors: { row: number; message: string }[];
-}
+export type EquipmentImportResult = RowValidationResult<EquipmentImportRow>;
 
-export function validateEquipmentRows(rows: unknown[]): EquipmentImportResult {
-  const valid: EquipmentImportRow[] = [];
+export function validateEquipmentRows(rows: RawRow[]): EquipmentImportResult {
+  const valid: ValidRow<EquipmentImportRow>[] = [];
   const errors: { row: number; message: string }[] = [];
 
-  rows.forEach((row, index) => {
-    const prepared = prepareImportRow((row ?? {}) as Record<string, unknown>);
+  for (const { row, raw } of rows) {
+    const prepared = prepareImportRow((raw ?? {}) as Record<string, unknown>);
     const result = createEquipmentSchema.safeParse(prepared);
     if (result.success) {
-      valid.push(result.data);
+      valid.push({ row, data: result.data });
     } else {
       errors.push({
-        row: index + 1,
+        row,
         message: result.error.issues
           .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
           .join("; "),
       });
     }
-  });
+  }
 
   return { valid, errors };
 }

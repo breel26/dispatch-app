@@ -56,3 +56,38 @@ export function normalizeEmployeeIdInput(raw: string): string | null {
 export function isCanonicalEmployeeId(value: string): boolean {
   return new RegExp(`^\\d{${EMPLOYEE_ID_MIN_DIGITS},}$`).test(value) && !/^0+$/.test(value);
 }
+
+// Suggests the next employee number: the highest in use, plus one.
+//
+// Same no-gap-filling rule as nextEquipmentNumber, for the same reason -
+// an employee number is on timesheets, certified payroll and I-9s long
+// after the worker leaves, so it is never handed to a second person.
+//
+// Note the BigInt. This module exists because Number() silently mangles a
+// long badge number, and finding a maximum is exactly where that bug would
+// come back: Number("100000000000000001") and Number("100000000000000002")
+// are the same float, so the wrong id would win and the "next" id would
+// collide with one already issued. Comparison and increment both stay in
+// integer arithmetic that has no precision ceiling.
+//
+// Unlike equipment numbers there is no exhaustion case to report: employee
+// ids have a minimum width, not a maximum, so the next one always exists.
+//
+// BigInt(0) rather than the 0n literal only because the project targets
+// ES2017, where that syntax is not available; the lib is esnext, so the
+// type and the runtime behavior are the same either way.
+export function nextEmployeeId(existingIds: Iterable<string>): string {
+  let highest = BigInt(0);
+
+  for (const value of existingIds) {
+    const trimmed = value.trim();
+    // Anything that is not a plain digit string is not an employee number
+    // and tells us nothing about what is taken.
+    if (!/^\d+$/.test(trimmed)) continue;
+
+    const numeric = BigInt(trimmed);
+    if (numeric > highest) highest = numeric;
+  }
+
+  return (highest + BigInt(1)).toString().padStart(EMPLOYEE_ID_MIN_DIGITS, "0");
+}

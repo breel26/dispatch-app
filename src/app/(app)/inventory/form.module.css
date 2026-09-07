@@ -60,3 +60,22 @@
   opacity: 0.6;
   cursor: not-allowed;
 }
+
+/* Wraps a block of the import pages (expected columns, the clash review,
+   the result). Referenced by ImportForm since it was written but never
+   actually defined here, so it had been rendering unstyled. */
+.section {
+  margin-bottom: 1.5rem;
+}
+
+.section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+}
+
+.section th,
+.section td {
+  padding: 0.35rem 0.5rem;
+  border-bottom: 1px solid var(--border-color, #e4e4e7);
+  vertical-align: top;
+}

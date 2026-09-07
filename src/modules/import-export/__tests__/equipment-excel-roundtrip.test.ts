@@ -36,14 +36,14 @@ describe("equipment excel round-trip", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.valid).toHaveLength(2);
-    expect(result.valid[0].equipmentNumber).toBe("03-10-0099");
-    expect(result.valid[0].operatingHours).toBe(1250);
-    expect(result.valid[0].requiredCertifications).toEqual(["Heavy Equipment Operator"]);
+    expect(result.valid[0].data.equipmentNumber).toBe("03-10-0099");
+    expect(result.valid[0].data.operatingHours).toBe(1250);
+    expect(result.valid[0].data.requiredCertifications).toEqual(["Heavy Equipment Operator"]);
     // A blank Operating Hours cell (the second row) falls back to the
     // schema's own default of 0 for newly created equipment, the same
     // as leaving the field blank on the create form would.
-    expect(result.valid[1].operatingHours).toBe(0);
-    expect(result.valid[1].requiredCertifications).toEqual([]);
+    expect(result.valid[1].data.operatingHours).toBe(0);
+    expect(result.valid[1].data.requiredCertifications).toEqual([]);
   });
 
   it("tolerates a fleet number typed without dashes", async () => {
@@ -69,7 +69,7 @@ describe("equipment excel round-trip", () => {
     const result = await importEquipmentFromExcel(buffer);
 
     expect(result.errors).toEqual([]);
-    expect(result.valid[0].equipmentNumber).toBe("03-10-0099");
+    expect(result.valid[0].data.equipmentNumber).toBe("03-10-0099");
   });
 
   it("reports a clear error for an equipment number naming an unregistered code", async () => {

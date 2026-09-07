@@ -1,5 +1,6 @@
 import { createPersonnelSchema, type CreatePersonnelInput } from "@/modules/inventory/schemas";
 import { CRAFT_VALUES, CLASSIFICATION_VALUES, isCraft, isClassification } from "@/modules/inventory/craft";
+import type { RawRow, RowValidationResult, ValidRow } from "../rows";
 
 // Deliberately reuses createPersonnelSchema wholesale rather than
 // declaring a second, parallel schema the way material.ts does for
@@ -58,35 +59,32 @@ export function prepareImportRow(raw: Record<string, unknown>): Record<string, u
   return prepared;
 }
 
-export interface PersonnelImportResult {
-  valid: PersonnelImportRow[];
-  errors: { row: number; message: string }[];
-}
+export type PersonnelImportResult = RowValidationResult<PersonnelImportRow>;
 
 // Validates an array of unknown rows and separates them into valid rows
 // and per-row errors, the same "bad row does not block the rest of the
 // import" behavior validateMaterialRows already established.
-export function validatePersonnelRows(rows: unknown[]): PersonnelImportResult {
-  const valid: PersonnelImportRow[] = [];
+export function validatePersonnelRows(rows: RawRow[]): PersonnelImportResult {
+  const valid: ValidRow<PersonnelImportRow>[] = [];
   const errors: { row: number; message: string }[] = [];
 
-  rows.forEach((row, index) => {
+  for (const { row, raw } of rows) {
     // Rows arrive from importPersonnelFromExcel already shaped as plain
     // records (built one field at a time from named cells), so this is a
     // type-level narrowing, not a runtime guess.
-    const prepared = prepareImportRow((row ?? {}) as Record<string, unknown>);
+    const prepared = prepareImportRow((raw ?? {}) as Record<string, unknown>);
     const result = createPersonnelSchema.safeParse(prepared);
     if (result.success) {
-      valid.push(result.data);
+      valid.push({ row, data: result.data });
     } else {
       errors.push({
-        row: index + 1,
+        row,
         message: result.error.issues
           .map((issue) => `${issue.path.join(".")}: ${issue.message}`)
           .join("; "),
       });
     }
-  });
+  }
 
   return { valid, errors };
 }

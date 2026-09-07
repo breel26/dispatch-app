@@ -1,4 +1,4 @@
-import ImportForm from "../../ImportForm";
+import ResolvingImportForm from "../../ResolvingImportForm";
 import { importPersonnelAction } from "../../importActions";
 
 export default function ImportPersonnelPage() {
@@ -6,17 +6,21 @@ export default function ImportPersonnelPage() {
     <div>
       <h1>Import Personnel</h1>
       <p>
-        A row whose Employee ID already exists on file updates that worker, including their SSN
-        and driver license number if the file has them - the file is treated as the current
-        source of truth for that row. A new Employee ID creates a new worker.
+        A row with a new Employee ID creates a worker. A row whose ID is already in use is not
+        imported straight away: the import pauses and asks whether it is a correction to the
+        worker already on file - in which case the file is treated as the current source of
+        truth for that row, including their SSN and driver license number if it has them - or a
+        different worker who needs their own ID, and suggests the next free one.
       </p>
       <p>
         SSN and driver license number are encrypted the moment each row is written and are never
         written to disk in plain form - the uploaded file is only ever held in memory for the
         length of this import.
       </p>
-      <ImportForm
+      <ResolvingImportForm
         action={importPersonnelAction}
+        keyLabel="employee ID"
+        keyPlaceholder="000042"
         columns={[
           { name: "Employee ID", required: true, note: "Any number; padded to 6 digits" },
           { name: "First Name", required: true },

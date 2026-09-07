@@ -50,11 +50,11 @@ describe("personnel excel round-trip", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.valid).toHaveLength(1);
-    expect(result.valid[0].employeeId).toBe("000010");
-    expect(result.valid[0].firstName).toBe("Jamie");
-    expect(result.valid[0].craft).toBe("CARPENTER");
-    expect(result.valid[0].classification).toBe("JOURNEYMAN");
-    expect(result.valid[0].certifications).toEqual(["OSHA-30"]);
+    expect(result.valid[0].data.employeeId).toBe("000010");
+    expect(result.valid[0].data.firstName).toBe("Jamie");
+    expect(result.valid[0].data.craft).toBe("CARPENTER");
+    expect(result.valid[0].data.classification).toBe("JOURNEYMAN");
+    expect(result.valid[0].data.certifications).toEqual(["OSHA-30"]);
   });
 
   it("accepts a human-readable craft and classification label, not just the stored code", async () => {
@@ -99,9 +99,9 @@ describe("personnel excel round-trip", () => {
 
     expect(result.errors).toEqual([]);
     expect(result.valid).toHaveLength(1);
-    expect(result.valid[0].craft).toBe("PIPE_FITTER");
-    expect(result.valid[0].classification).toBe("FOREMAN");
-    expect(result.valid[0].employeeId).toBe("000042"); // normalized, like the create form
+    expect(result.valid[0].data.craft).toBe("PIPE_FITTER");
+    expect(result.valid[0].data.classification).toBe("FOREMAN");
+    expect(result.valid[0].data.employeeId).toBe("000042"); // normalized, like the create form
   });
 
   it("reports a clear error for a row missing a required field, without blocking other rows", async () => {
@@ -162,7 +162,7 @@ describe("personnel excel round-trip", () => {
     const result = await importPersonnelFromExcel(buffer);
 
     expect(result.valid).toHaveLength(1);
-    expect(result.valid[0].employeeId).toBe("000002");
+    expect(result.valid[0].data.employeeId).toBe("000002");
     expect(result.errors).toHaveLength(1);
     expect(result.errors[0].row).toBe(1);
     expect(result.errors[0].message.toLowerCase()).toContain("ssn");

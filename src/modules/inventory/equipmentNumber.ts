@@ -123,3 +123,52 @@ export function normalizeEquipmentNumberInput(raw: string): string | null {
 
   return formatEquipmentNumber({ type, capacity, sequence });
 }
+
+// The sequence is four digits, so a type+capacity family holds at most
+// 9999 machines. Reaching that is not realistic for a real fleet, but the
+// suggestion logic still has to say "no number left" rather than roll over
+// to 0000 or silently widen the format.
+export const EQUIPMENT_SEQUENCE_MAX = 9999;
+
+// Suggests the next number in one type+capacity family: the highest
+// sequence in use, plus one.
+//
+// Gaps are deliberately NOT filled. If 0001-0003 and 0007 are in use the
+// suggestion is 0008, not 0004. A fleet number outlives the machine that
+// carried it - it is on old purchase orders, delivery tickets and job
+// paperwork - so handing a scrapped excavator's number to a new loader
+// makes that history ambiguous in a way nobody can untangle later.
+//
+// `existingNumbers` is anything iterable so callers can pass the numbers
+// already on file, plus the ones claimed earlier in the same import batch,
+// without building an intermediate array. Values that are not canonical
+// equipment numbers are skipped rather than throwing: this answers "what
+// number is free", and a malformed row is a separate problem reported
+// separately.
+//
+// Returns null when the family is exhausted.
+export function nextEquipmentNumber(
+  existingNumbers: Iterable<string>,
+  type: EquipmentTypeCode,
+  capacity: EquipmentCapacityCode
+): string | null {
+  let highest = 0;
+
+  for (const value of existingNumbers) {
+    const parts = parseEquipmentNumber(value);
+    if (!parts) continue;
+    // Sequences are only unique within a type+capacity pair, so numbers
+    // from other families say nothing about what is free in this one.
+    if (parts.type !== type || parts.capacity !== capacity) continue;
+
+    // Safe as a Number here, unlike employee ids: the regex already
+    // guarantees exactly four digits, so the value cannot exceed 9999.
+    const sequence = Number(parts.sequence);
+    if (sequence > highest) highest = sequence;
+  }
+
+  const next = highest + 1;
+  if (next > EQUIPMENT_SEQUENCE_MAX) return null;
+
+  return formatEquipmentNumber({ type, capacity, sequence: String(next) });
+}

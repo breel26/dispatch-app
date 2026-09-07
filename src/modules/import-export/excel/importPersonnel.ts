@@ -1,10 +1,8 @@
 import ExcelJS from "exceljs";
 import { validatePersonnelRows, type PersonnelImportRow } from "../schemas/personnel";
+import type { RawRow, RowValidationResult } from "../rows";
 
-export interface ImportResult {
-  valid: PersonnelImportRow[];
-  errors: { row: number; message: string }[];
-}
+export type ImportResult = RowValidationResult<PersonnelImportRow>;
 
 const HEADER_MAP: Record<string, string> = {
   "employee id": "employeeId",
@@ -55,7 +53,7 @@ export async function importPersonnelFromExcel(fileBuffer: Buffer): Promise<Impo
   const headerRow = sheet.getRow(1).values as unknown[];
   const headers = headerRow.map((h) => (typeof h === "string" ? h.trim().toLowerCase() : ""));
 
-  const rawRows: unknown[] = [];
+  const rawRows: RawRow[] = [];
 
   sheet.eachRow((row, rowNumber) => {
     if (rowNumber === 1) return; // skip header
@@ -70,7 +68,10 @@ export async function importPersonnelFromExcel(fileBuffer: Buffer): Promise<Impo
       record[field] = cellValue === undefined || cellValue === null ? undefined : cellValue;
     });
 
-    rawRows.push(record);
+    // rowNumber is the real sheet row, so subtracting the header gives
+    // the data-row number a dispatcher would count - stable even if
+    // ExcelJS skipped a blank row above this one.
+    rawRows.push({ row: rowNumber - 1, raw: record });
   });
 
   return validatePersonnelRows(rawRows);
