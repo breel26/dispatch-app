@@ -42,3 +42,8 @@ yarn-error.log*
 next-env.d.ts
 .env
 .env.local
+
+# local spreadsheet/database working files (Buck's own fleet data, not app source)
+*.xlsx
+*.odb
+.~lock.*#
