@@ -10,7 +10,12 @@ import styles from "./importReview.module.css";
 interface ResolvingImportFormProps {
   action: (prevState: ImportActionState, formData: FormData) => Promise<ImportActionState>;
   columns: ImportColumn[];
-  /** What the natural key is called in this importer, e.g. "equipment number". */
+  /**
+   * What the natural key is called in this importer, e.g. "equipment
+   * number". Read out loud after "an" in the review copy below, which both
+   * current labels (equipment number, employee ID) suit; a consonant-initial
+   * label would need that sentence reworded.
+   */
   keyLabel: string;
   /** Format hint shown on the manual-entry box. */
   keyPlaceholder: string;
@@ -147,7 +152,7 @@ export default function ResolvingImportForm({
             <h2>Numbers already in use</h2>
             <p className={formStyles.hint}>
               Nothing has been imported yet. {review.clashes.length} row
-              {review.clashes.length === 1 ? "" : "s"} reuse a {keyLabel} that is already taken
+              {review.clashes.length === 1 ? "" : "s"} reuse an {keyLabel} that is already taken
               {review.cleanCount > 0 && `, and ${review.cleanCount} import without a conflict`}.
               Highlighted rows do not look like the record already on file, so they need an
               answer before this can be imported.

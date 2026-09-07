@@ -25,6 +25,7 @@ import {
   type ImportDecisions,
   type PlannedRow,
 } from "@/modules/import-export/importPlan";
+import { commitPlan } from "@/modules/import-export/commitPlan";
 import { nextEquipmentNumber, parseEquipmentNumber } from "@/modules/inventory/equipmentNumber";
 import { nextEmployeeId } from "@/modules/inventory/employeeId";
 import type { PersonnelImportRow } from "@/modules/import-export/schemas/personnel";
@@ -129,88 +130,6 @@ function toReview(fileHash: string, plan: PlannedRow<unknown>[]): ImportReview {
   return { fileHash, cleanCount, clashes };
 }
 
-/**
- * Walks a plan and writes it, one row at a time.
- *
- * Rows with no clash are created. Rows with a clash need a decision:
- * overwrite the record already holding the number, or create a new record
- * at a different one. A clashing row with no decision is reported as an
- * error and skipped, never guessed at - guessing wrong here either
- * overwrites a machine that exists or duplicates one that does not.
- */
-async function commitPlan<TRow>({
-  orgId,
-  plan,
-  decisions,
-  withKey,
-  findExisting,
-  create,
-  update,
-}: {
-  orgId: string;
-  plan: PlannedRow<TRow>[];
-  decisions: ImportDecisions;
-  /** Returns the row with its natural key replaced, for a renumbered create. */
-  withKey: (row: TRow, key: string) => TRow;
-  findExisting: (orgId: string, key: string) => Promise<{ id: string } | null>;
-  create: (orgId: string, row: TRow) => Promise<unknown>;
-  update: (orgId: string, id: string, row: TRow) => Promise<unknown>;
-}): Promise<{
-  createdCount: number;
-  updatedCount: number;
-  errors: { row: number; message: string }[];
-}> {
-  let createdCount = 0;
-  let updatedCount = 0;
-  const errors: { row: number; message: string }[] = [];
-
-  for (const planned of plan) {
-    try {
-      if (!planned.clash) {
-        await create(orgId, planned.data);
-        createdCount++;
-        continue;
-      }
-
-      const decision = decisions[planned.row];
-      if (!decision) {
-        // Reachable two ways: the form sent nothing for this row, or the
-        // row only started clashing between the review and the commit
-        // because the number was taken in the meantime.
-        errors.push({
-          row: planned.row,
-          message: `${planned.key} is already in use and no choice was made for this row`,
-        });
-        continue;
-      }
-
-      if (decision.action === "update") {
-        const existing = await findExisting(orgId, planned.key);
-        if (!existing) {
-          // Deleted between the review and the commit. Creating it instead
-          // would be a reasonable guess and still the wrong thing to do
-          // without asking.
-          errors.push({
-            row: planned.row,
-            message: `${planned.key} no longer exists, so there was nothing to update`,
-          });
-          continue;
-        }
-        await update(orgId, existing.id, planned.data);
-        updatedCount++;
-        continue;
-      }
-
-      await create(orgId, withKey(planned.data, decision.key));
-      createdCount++;
-    } catch (err) {
-      errors.push({ row: planned.row, message: toActionErrorMessage(err) });
-    }
-  }
-
-  return { createdCount, updatedCount, errors };
-}
-
 export async function importPersonnelAction(
   _prevState: ImportActionState,
   formData: FormData
@@ -258,6 +177,7 @@ export async function importPersonnelAction(
     findExisting: getPersonnelByEmployeeId,
     create: createPersonnel,
     update: updatePersonnel,
+    describeError: toActionErrorMessage,
   });
 
   revalidatePath("/inventory/personnel");
@@ -324,6 +244,7 @@ export async function importEquipmentAction(
     findExisting: getEquipmentByNumber,
     create: createEquipment,
     update: updateEquipment,
+    describeError: toActionErrorMessage,
   });
 
   revalidatePath("/inventory/equipment");
