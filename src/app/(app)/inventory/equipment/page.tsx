@@ -30,6 +30,13 @@ export default async function EquipmentPage({ searchParams }: EquipmentPageProps
       <div className={styles.headerRow}>
         <h1>Equipment</h1>
         <div style={{ display: "flex", gap: "0.75rem" }}>
+          {/* A plain anchor, not next/link: the response is an
+              attachment from a Route Handler, and a client-side
+              navigation would fetch it into the router instead of handing
+              it to the browser to save. The lint rule below assumes this
+              path is a page; it is not. */}
+          {/* eslint-disable-next-line @next/next/no-html-link-for-pages */}
+          <a href="/inventory/equipment/export">Export to Excel</a>
           <Link href="/inventory/equipment/import">Import from Excel</Link>
           <Link href="/inventory/equipment/new" className={styles.newButton}>
             New Equipment
